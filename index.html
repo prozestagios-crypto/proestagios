@@ -348,8 +348,8 @@
         // ================= CONFIGURAÇÃO SEGURA DO SUPABASE =================
         // NUNCA declare "const supabase = ...". Use outro nome como "clienteSupabase".
         
-        const SUPABASE_URL = 'SUA_URL_DO_SUPABASE_AQUI'; // Ex: 'https://xyz.supabase.co'
-        const SUPABASE_KEY = 'SUA_CHAVE_ANON_AQUI';
+        const SUPABASE_URL = 'https://aprbngabaifeyvcpyyxk.supabase.co'; // Ex: 'https://xyz.supabase.co'
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFwcmJuZ2FiYWlmZXl2Y3B5eXhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzMDgzNzksImV4cCI6MjEwNjg4NDM3OX0.lBvgNoQSgOo2jPbhRiMYCKJgOe974EKYset7_oj3Xfg';
         
         let clienteSupabase = null;
         if (typeof supabase !== 'undefined') {
@@ -362,7 +362,7 @@
             loadingDiv.classList.remove('hidden');
 
             try {
-                if (!clienteSupabase || SUPABASE_URL === 'SUA_URL_DO_SUPABASE_AQUI') {
+                if (!clienteSupabase || SUPABASE_URL === 'https://aprbngabaifeyvcpyyxk.supabase.co'') {
                     throw new Error("Supabase não configurado. Por favor, insira a sua URL e Chave no código-fonte.");
                 }
 
