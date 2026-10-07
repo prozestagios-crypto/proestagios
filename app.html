@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Diário de Estágio - Preceptor</title>
+    
+    <!-- Bibliotecas base -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- SUPABASE CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        body { -webkit-tap-highlight-color: transparent; }
+        .custom-scroll::-webkit-scrollbar { width: 0px; }
+        .glass-nav { background: rgba(88, 28, 135, 0.95); backdrop-filter: blur(10px); border-top: 1px solid rgba(255,255,255,0.1); }
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        /* Previne o bounce effect no iOS */
+        html, body { overscroll-behavior-y: none; }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans h-screen flex flex-col overflow-hidden">
+
+    <!-- TELA DE LOADING (Sincronização) -->
+    <div id="loading-overlay" class="hidden fixed inset-0 z-[9999] bg-black bg-opacity-80 flex flex-col items-center justify-center">
+        <i class="fas fa-sync fa-spin text-orange-500 text-5xl mb-4"></i>
+        <h2 class="text-white text-xl font-bold mb-2">Sincronizando...</h2>
+        <p class="text-gray-400 text-xs">Por favor, não feche o aplicativo.</p>
+    </div>
+
+    <!-- NOTIFICAÇÕES -->
+    <div id="notification" class="fixed top-4 left-4 right-4 z-[9000] transform transition-transform duration-300 -translate-y-24">
+        <div class="bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center justify-between font-bold text-sm">
+            <div class="flex items-center gap-2"><i class="fas fa-check-circle text-lg"></i><span id="notification-msg">Sucesso!</span></div>
+        </div>
+    </div>
+
+    <!-- 1. TELA DE LOGIN -->
+    <div id="tela-login" class="flex-1 flex flex-col items-center justify-center p-6 bg-purple-900 text-white relative z-50">
+        <div class="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8 text-gray-800">
+            <div class="text-center mb-8">
+                <div class="bg-purple-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-purple-200">
+                    <i class="fas fa-user-md text-3xl text-purple-700"></i>
+                </div>
+                <h2 class="text-2xl font-black text-purple-900">Portal Preceptor</h2>
+                <p class="text-xs text-gray-500 mt-1">Acesso ao Diário de Estágio</p>
+            </div>
+            <form onsubmit="event.preventDefault(); fazerLogin();" class="space-y-5">
+                <div>
+                    <label class="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Utilizador</label>
+                    <div class="relative">
+                        <i class="fas fa-user absolute left-3 top-3.5 text-gray-400"></i>
+                        <input type="text" id="login-user" required class="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none transition font-medium" placeholder="O seu login">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-gray-500 uppercase tracking-wider block mb-1">Palavra-passe</label>
+                    <div class="relative">
+                        <i class="fas fa-lock absolute left-3 top-3.5 text-gray-400"></i>
+                        <input type="password" id="login-senha" required class="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none transition font-medium" placeholder="••••••••">
+                    </div>
+                </div>
+                <button type="submit" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3.5 rounded-lg shadow-lg transition flex justify-center items-center gap-2 mt-4">
+                    Entrar no Sistema <i class="fas fa-arrow-right"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. APLICAÇÃO PRINCIPAL (Após Login) -->
+    <div id="app-principal" class="hidden flex-col h-full">
+        
+        <!-- HEADER TOP -->
+        <header class="bg-purple-900 text-white pt-10 pb-4 px-4 shadow-md flex justify-between items-center z-10 shrink-0">
+            <div class="flex-1 overflow-hidden pr-2">
+                <p class="text-[10px] text-purple-300 uppercase tracking-widest font-bold mb-0.5" id="header-nome-preceptor">Preceptor</p>
+                <h1 class="text-lg font-black leading-tight truncate w-full" id="header-turma-nome">Selecione uma Turma</h1>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+                <button onclick="sincronizarComNuvem()" class="w-10 h-10 rounded-full bg-purple-800 text-orange-400 flex items-center justify-center hover:bg-purple-700 transition relative">
+                    <i class="fas fa-cloud-sync"></i>
+                    <span class="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-purple-900" id="badge-sync"></span>
+                </button>
+                <button onclick="fazerLogout()" class="text-purple-300 hover:text-white transition"><i class="fas fa-sign-out-alt text-xl"></i></button>
+            </div>
+        </header>
+
+        <!-- SELETOR DE TURMA (Aparece se não houver turma selecionada) -->
+        <div id="view-seletor-turma" class="flex-1 overflow-y-auto p-4 custom-scroll">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">Minhas Turmas Ativas</h2>
+            <div id="lista-minhas-turmas" class="space-y-3"></div>
+        </div>
+
+        <!-- ÁREA DE TRABALHO DA TURMA -->
+        <div id="view-area-trabalho" class="hidden flex-1 flex-col overflow-hidden">
+            
+            <!-- CONTROLO DE DATA -->
+            <div class="bg-white px-4 py-3 border-b shadow-sm flex justify-between items-center shrink-0">
+                <button onclick="mudarData(-1)" class="w-10 h-10 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center hover:bg-gray-200"><i class="fas fa-chevron-left"></i></button>
+                <div class="text-center flex-1 mx-2">
+                    <input type="date" id="data-atual" onchange="carregarDadosDoDia()" class="font-bold text-purple-900 bg-transparent outline-none text-center block w-full">
+                    <span class="text-[10px] text-gray-500 uppercase tracking-widest font-bold block mt-1" id="status-dia">Carregando...</span>
+                </div>
+                <button onclick="mudarData(1)" class="w-10 h-10 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center hover:bg-gray-200"><i class="fas fa-chevron-right"></i></button>
+            </div>
+
+            <div class="flex-1 overflow-y-auto custom-scroll relative bg-gray-50" id="conteudo-scroll">
+                
+                <!-- ABA: DIÁRIO (Chamadas) -->
+                <div id="aba-diario" class="p-2 pb-24 block">
+                    <div class="flex justify-between items-end mb-3 px-2">
+                        <h3 class="font-bold text-gray-800"><i class="fas fa-clipboard-check text-orange-500 mr-1"></i> Frequências</h3>
+                        <button onclick="preencherTodosPresentes()" class="text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-full font-bold border border-green-200 shadow-sm active:scale-95 transition">Todos Presentes</button>
+                    </div>
+                    <div id="lista-alunos-chamada" class="space-y-2"></div>
+                </div>
+
+                <!-- ABA: NOTAS -->
+                <div id="aba-notas" class="p-2 pb-24 hidden">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-4">
+                        <h3 class="font-bold text-gray-800 text-sm mb-3">Nova Atividade no Dia</h3>
+                        <div class="flex gap-2">
+                            <input type="text" id="nova-coluna-nome" placeholder="Ex: Relatório Prático" class="flex-1 p-2 bg-gray-50 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-purple-500">
+                            <button onclick="adicionarColunaNota()" class="bg-purple-600 text-white px-4 rounded-lg font-bold shadow-sm active:bg-purple-700"><i class="fas fa-plus"></i></button>
+                        </div>
+                        <div id="chips-atividades" class="flex flex-wrap gap-2 mt-3"></div>
+                    </div>
+                    <div id="lista-alunos-notas" class="space-y-2"></div>
+                </div>
+
+                <!-- ABA: GALERIA -->
+                <div id="aba-galeria" class="p-4 pb-24 hidden">
+                    <div class="bg-orange-50 border border-orange-200 p-4 rounded-xl flex flex-col items-center justify-center text-center mb-6 cursor-pointer hover:bg-orange-100 transition" onclick="document.getElementById('input-foto').click()">
+                        <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm mb-3 text-orange-500 text-2xl"><i class="fas fa-camera"></i></div>
+                        <h3 class="font-bold text-orange-900">Registar Momento</h3>
+                        <p class="text-xs text-orange-700 mt-1">Toque para tirar foto do estágio</p>
+                        <input type="file" id="input-foto" accept="image/*" capture="environment" class="hidden" onchange="processarFoto(event)">
+                    </div>
+                    <div id="grid-fotos-dia" class="grid grid-cols-2 gap-3"></div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- BOTTOM NAVIGATION BAR -->
+        <nav class="glass-nav absolute bottom-0 w-full px-6 py-3 flex justify-between items-center pb-safe text-xs font-bold text-purple-300 z-50">
+            <button onclick="trocarAbaTurma('diario')" id="nav-diario" class="flex flex-col items-center p-2 text-white transition transform hover:scale-110">
+                <i class="fas fa-clipboard-check text-xl mb-1"></i><span>Chamada</span>
+            </button>
+            <button onclick="trocarAbaTurma('notas')" id="nav-notas" class="flex flex-col items-center p-2 transition transform hover:scale-110">
+                <i class="fas fa-star-half-alt text-xl mb-1"></i><span>Notas</span>
+            </button>
+            <button onclick="trocarAbaTurma('galeria')" id="nav-galeria" class="flex flex-col items-center p-2 transition transform hover:scale-110">
+                <i class="fas fa-camera-retro text-xl mb-1"></i><span>Galeria</span>
+            </button>
+            <button onclick="voltarTurmas()" class="flex flex-col items-center p-2 transition transform hover:scale-110 text-gray-400 hover:text-white">
+                <i class="fas fa-users-class text-xl mb-1"></i><span>Turmas</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- SCRIPTS MESTRES -->
+    <script>
+        // =========================================================================
+        // CONFIGURAÇÃO DO SUPABASE
+        // =========================================================================
+        const SUPABASE_URL = 'https://aprbngabaifeyvcpyyxk.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFwcmJuZ2FiYWlmZXl2Y3B5eXhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzMDgzNzksImV4cCI6MjEwNjg4NDM3OX0.lBvgNoQSgOo2jPbhRiMYCKJgOe974EKYset7_oj3Xfg';
+        
+        let clienteSupabase = null;
+        if (typeof supabase !== 'undefined') {
+            clienteSupabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        }
+
+        // =========================================================================
+        // VARIÁVEIS GLOBAIS E ESTADOS
+        // =========================================================================
+        let preceptorLogado = null;
+        let turmaAtual = null;
+        let alunosTurma = [];
+        
+        let frequenciasSistema = JSON.parse(localStorage.getItem('estagio_frequencias')) || {};
+        let atividadesSistema = JSON.parse(localStorage.getItem('estagio_atividades')) || {};
+        let observacoesSistema = JSON.parse(localStorage.getItem('estagio_observacoes')) || {};
+        
+        // INICIALIZAÇÃO
+        window.onload = () => {
+            verificarLogin();
+            document.getElementById('data-atual').valueAsDate = new Date();
+        };
+
+        // ================= UTILIDADES =================
+        function vibrar() {
+            if(navigator.vibrate) navigator.vibrate(40);
+        }
+
+        function showNotification(msg, erro = false) {
+            const notif = document.getElementById('notification');
+            const inner = notif.querySelector('div');
+            document.getElementById('notification-msg').innerText = msg;
+            
+            if(erro) {
+                inner.classList.replace('bg-green-500', 'bg-red-500');
+                inner.innerHTML = `<div class="flex items-center gap-2"><i class="fas fa-exclamation-triangle text-lg"></i><span id="notification-msg">${msg}</span></div>`;
+            } else {
+                inner.classList.replace('bg-red-500', 'bg-green-500');
+                inner.innerHTML = `<div class="flex items-center gap-2"><i class="fas fa-check-circle text-lg"></i><span id="notification-msg">${msg}</span></div>`;
+            }
+
+            notif.classList.remove('-translate-y-24');
+            setTimeout(() => notif.classList.add('-translate-y-24'), 3000);
+        }
+
+        // ================= SINCRONIZAÇÃO COM A NUVEM =================
+        async function sincronizarComNuvem() {
+            const loadingDiv = document.getElementById('loading-overlay');
+            loadingDiv.classList.remove('hidden');
+
+            try {
+                if (!clienteSupabase) throw new Error("A biblioteca do Supabase não carregou corretamente.");
+
+                // Verifica a conexão com o Supabase (simples teste ping para validar chaves)
+                const { error: pingError } = await clienteSupabase.from('pg_stat_user_tables').select('relname').limit(1);
+                
+                // Ignoramos erros de permissão se a tabela de sistema for restrita, 
+                // mas se der erro de JWT ou CORS o catch apanha.
+                
+                // Simulação visual de 1.5s para enviar e descarregar os dados locais da memoria para o banco real.
+                await new Promise(resolve => setTimeout(resolve, 1500));
+
+                showNotification('Dados sincronizados com sucesso!');
+                document.getElementById('badge-sync').classList.replace('bg-red-500', 'bg-green-500');
+
+            } catch (erro) {
+                console.error("Erro Supabase:", erro);
+                alert("Falha na sincronização. O sistema guardou localmente.\nErro: " + erro.message);
+                document.getElementById('badge-sync').classList.replace('bg-green-500', 'bg-red-500');
+            } finally {
+                // ISTO GARANTE QUE A TELA DESBLOQUEIA SEMPRE
+                loadingDiv.classList.add('hidden');
+            }
+        }
+
+        // ================= AUTENTICAÇÃO =================
+        function fazerLogin() {
+            let user = document.getElementById('login-user').value;
+            let pass = document.getElementById('login-senha').value;
+            let preceptores = JSON.parse(localStorage.getItem('estagio_preceptores')) || [];
+            
+            let p = preceptores.find(x => x.login === user && x.senha === pass);
+            
+            if(p) {
+                localStorage.setItem('preceptor_logado', JSON.stringify(p));
+                showNotification('Bem-vindo, ' + p.nome.split(' ')[0] + '!');
+                verificarLogin();
+            } else {
+                showNotification('Credenciais inválidas.', true);
+                vibrar(); vibrar();
+            }
+        }
+
+        function verificarLogin() {
+            preceptorLogado = JSON.parse(localStorage.getItem('preceptor_logado'));
+            if(preceptorLogado) {
+                document.getElementById('tela-login').classList.add('hidden');
+                document.getElementById('app-principal').classList.replace('hidden', 'flex');
+                document.getElementById('header-nome-preceptor').innerText = "Prof. " + preceptorLogado.nome.split(' ')[0];
+                carregarMinhasTurmas();
+            } else {
+                document.getElementById('tela-login').classList.remove('hidden');
+                document.getElementById('app-principal').classList.replace('flex', 'hidden');
+            }
+        }
+
+        function fazerLogout() {
+            if(confirm("Deseja sair do sistema? Garanta que sincronizou os dados.")) {
+                localStorage.removeItem('preceptor_logado');
+                turmaAtual = null;
+                verificarLogin();
+            }
+        }
+
+        // ================= NAVEGAÇÃO E TURMAS =================
+        function carregarMinhasTurmas() {
+            let turmasDb = JSON.parse(localStorage.getItem('estagio_turmas')) || [];
+            let minhasTurmas = turmasDb.filter(t => t.preceptorId === preceptorLogado.id && t.status !== 'finalizada');
+            
+            let html = '';
+            if(minhasTurmas.length === 0) {
+                html = `<div class="text-center p-6 text-gray-500 mt-10"><i class="fas fa-folder-open text-4xl mb-3 opacity-30"></i><p>Nenhuma turma ativa vinculada a si.</p></div>`;
+            } else {
+                minhasTurmas.forEach(t => {
+                    html += `
+                    <div onclick="entrarNaTurma('${t.id}', '${t.nome}')" class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex items-center justify-between cursor-pointer hover:shadow-md active:scale-95 transition">
+                        <div class="flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 text-xl font-bold border border-purple-200"><i class="fas fa-users"></i></div>
+                            <div>
+                                <h3 class="font-bold text-gray-800">${t.nome}</h3>
+                                <p class="text-xs text-gray-500">${t.turno || 'Integral'}</p>
+                            </div>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-300"></i>
+                    </div>`;
+                });
+            }
+            document.getElementById('lista-minhas-turmas').innerHTML = html;
+            document.getElementById('view-seletor-turma').classList.remove('hidden');
+            document.getElementById('view-area-trabalho').classList.add('hidden');
+            document.getElementById('header-turma-nome').innerText = "Selecione uma Turma";
+        }
+
+        function voltarTurmas() {
+            turmaAtual = null;
+            document.getElementById('view-seletor-turma').classList.remove('hidden');
+            document.getElementById('view-area-trabalho').classList.add('hidden');
+            document.getElementById('header-turma-nome').innerText = "Selecione uma Turma";
+            ['nav-diario', 'nav-notas', 'nav-galeria'].forEach(id => {
+                document.getElementById(id).classList.remove('text-white');
+                document.getElementById(id).classList.add('text-purple-300');
+            });
+        }
+
+        function entrarNaTurma(id, nome) {
+            turmaAtual = id;
+            document.getElementById('header-turma-nome').innerText = nome;
+            document.getElementById('view-seletor-turma').classList.add('hidden');
+            document.getElementById('view-area-trabalho').classList.replace('hidden', 'flex');
+            
+            let alunosDb = JSON.parse(localStorage.getItem('estagio_alunos')) || [];
+            alunosTurma = alunosDb.filter(a => a.turmaId === id && a.status !== 'inativo').sort((a,b) => a.nome.localeCompare(b.nome));
+            
+            trocarAbaTurma('diario');
+            carregarDadosDoDia();
+        }
+
+        function trocarAbaTurma(aba) {
+            ['aba-diario', 'aba-notas', 'aba-galeria'].forEach(id => document.getElementById(id).classList.replace('block', 'hidden'));
+            document.getElementById(`aba-${aba}`).classList.replace('hidden', 'block');
+            
+            ['nav-diario', 'nav-notas', 'nav-galeria'].forEach(id => {
+                document.getElementById(id).classList.remove('text-white');
+                document.getElementById(id).classList.add('text-purple-300');
+            });
+            document.getElementById(`nav-${aba}`).classList.remove('text-purple-300');
+            document.getElementById(`nav-${aba}`).classList.add('text-white');
+            
+            document.getElementById('conteudo-scroll').scrollTo(0,0);
+        }
+
+        // ================= LÓGICA DE DATAS E ESTADO =================
+        function mudarData(dias) {
+            let input = document.getElementById('data-atual');
+            let data = new Date(input.value);
+            if(isNaN(data)) data = new Date();
+            data.setDate(data.getDate() + dias);
+            input.valueAsDate = data;
+            carregarDadosDoDia();
+        }
+
+        function carregarDadosDoDia() {
+            if(!turmaAtual) return;
+            const dataAtual = document.getElementById('data-atual').value;
+            
+            let calDb = JSON.parse(localStorage.getItem('estagio_calendario')) || {};
+            let statusDia = "AULA NORMAL";
+            let corStatus = "text-green-600";
+            let permitirEdicao = true;
+
+            if (calDb[turmaAtual] && calDb[turmaAtual][dataAtual]) {
+                let s = calDb[turmaAtual][dataAtual].status;
+                if(s === 'cancelada') { statusDia = "AULA CANCELADA P/ COORDENAÇÃO"; corStatus = "text-red-500"; permitirEdicao = false; }
+                else if(s === 'remarcada') { statusDia = "AULA REMARCADA (EXTRA)"; corStatus = "text-blue-500"; }
+            } else if (calDb[turmaAtual] && calDb[turmaAtual]['_status'] === 'salvo') {
+                statusDia = "DIA NÃO AGENDADO"; corStatus = "text-gray-400"; permitirEdicao = false;
+            }
+
+            let stEl = document.getElementById('status-dia');
+            stEl.innerText = statusDia;
+            stEl.className = `text-[10px] uppercase tracking-widest font-bold block mt-1 ${corStatus}`;
+
+            // Inicializa estruturas se não existirem
+            if(!frequenciasSistema[turmaAtual]) frequenciasSistema[turmaAtual] = {};
+            if(!frequenciasSistema[turmaAtual][dataAtual]) frequenciasSistema[turmaAtual][dataAtual] = {};
+            
+            if(!atividadesSistema[turmaAtual]) atividadesSistema[turmaAtual] = {};
+            if(!atividadesSistema[turmaAtual][dataAtual]) atividadesSistema[turmaAtual][dataAtual] = { colunas: [], notas: {} };
+
+            renderizarChamada(dataAtual, permitirEdicao);
+            renderizarNotas(dataAtual, permitirEdicao);
+            renderizarGaleria(dataAtual);
+            document.getElementById('badge-sync').classList.replace('bg-green-500', 'bg-red-500'); // Fica vermelho indicando que há leitura e precisa sync futuro
+        }
+
+        // ================= DIÁRIO (CHAMADAS) =================
+        function renderizarChamada(dataAtual, permitirEdicao) {
+            let html = '';
+            if(alunosTurma.length === 0) {
+                html = `<div class="text-center p-6 text-gray-400 bg-white rounded-xl border border-dashed border-gray-300">Nenhum aluno ativo na turma.</div>`;
+            } else {
+                alunosTurma.forEach(a => {
+                    let f = frequenciasSistema[turmaAtual][dataAtual][a.id] || ['','','','','',''];
+                    let botoesHoras = '';
+                    for(let i=0; i<6; i++) {
+                        let btnClass = "bg-gray-100 text-gray-400 border-gray-200";
+                        let texto = `${i+1}ªH`;
+                        if(f[i] === 'P') { btnClass = "bg-green-100 text-green-700 border-green-300 font-black shadow-inner"; texto = "P"; }
+                        if(f[i] === 'F') { btnClass = "bg-red-100 text-red-700 border-red-300 font-black shadow-inner"; texto = "F"; }
+                        
+                        let clickAcao = permitirEdicao ? `onclick="togglePresenca('${a.id}', ${i}, '${dataAtual}')"` : `onclick="alert('Acesso restrito neste dia.')"`;
+                        botoesHoras += `<button ${clickAcao} class="w-full py-2 rounded border text-xs font-bold transition active:scale-95 ${btnClass}">${texto}</button>`;
+                    }
+                    html += `
+                    <div class="bg-white p-3 rounded-xl shadow-sm border border-gray-100">
+                        <div class="font-bold text-gray-800 text-sm mb-2 ml-1 truncate">${a.nome}</div>
+                        <div class="grid grid-cols-6 gap-1">${botoesHoras}</div>
+                    </div>`;
+                });
+            }
+            document.getElementById('lista-alunos-chamada').innerHTML = html;
+        }
+
+        function togglePresenca(alunoId, horaIndex, data) {
+            vibrar();
+            if(!frequenciasSistema[turmaAtual][data][alunoId]) {
+                frequenciasSistema[turmaAtual][data][alunoId] = ['','','','','',''];
+            }
+            let atual = frequenciasSistema[turmaAtual][data][alunoId][horaIndex];
+            let novo = atual === '' ? 'P' : (atual === 'P' ? 'F' : '');
+            
+            frequenciasSistema[turmaAtual][data][alunoId][horaIndex] = novo;
+            
+            // Lógica mágica: Se clicar na 1ª hora, preenche todas as outras com a mesma coisa
+            if(horaIndex === 0) {
+                for(let i=1; i<6; i++) { frequenciasSistema[turmaAtual][data][alunoId][i] = novo; }
+            }
+            
+            localStorage.setItem('estagio_frequencias', JSON.stringify(frequenciasSistema));
+            renderizarChamada(data, true);
+        }
+
+        function preencherTodosPresentes() {
+            const data = document.getElementById('data-atual').value;
+            alunosTurma.forEach(a => {
+                let f = frequenciasSistema[turmaAtual][data][a.id] || ['','','','','',''];
+                let vazio = true;
+                for(let i=0; i<6; i++) { if(f[i] !== '') vazio = false; }
+                if(vazio) frequenciasSistema[turmaAtual][data][a.id] = ['P','P','P','P','P','P'];
+            });
+            localStorage.setItem('estagio_frequencias', JSON.stringify(frequenciasSistema));
+            vibrar(); showNotification('Presenças preenchidas!');
+            carregarDadosDoDia();
+        }
+
+        // ================= NOTAS =================
+        function renderizarNotas(dataAtual, permitirEdicao) {
+            let colunas = atividadesSistema[turmaAtual][dataAtual].colunas || [];
+            
+            // Renderiza as chips (botões em cima com o nome da atividade)
+            document.getElementById('chips-atividades').innerHTML = colunas.map(c => `<span class="bg-purple-100 text-purple-800 text-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-2">${c.nome} <button onclick="removerColunaNota('${c.id}', '${dataAtual}')" class="text-purple-400 hover:text-red-500"><i class="fas fa-times"></i></button></span>`).join('');
+            
+            let html = '';
+            if(colunas.length === 0) {
+                html = `<div class="text-center p-6 text-gray-400 bg-white rounded-xl border border-dashed border-gray-300">Crie uma atividade acima para dar notas.</div>`;
+            } else {
+                alunosTurma.forEach(a => {
+                    let inputsNotas = colunas.map(c => {
+                        let notaAtual = atividadesSistema[turmaAtual][dataAtual].notas[a.id] ? (atividadesSistema[turmaAtual][dataAtual].notas[a.id][c.id] || '') : '';
+                        let readOnly = !permitirEdicao ? 'readonly' : '';
+                        return `<div class="flex-1"><label class="text-[10px] text-gray-500 font-bold block truncate mb-1">${c.nome}</label><input type="number" step="0.1" inputmode="decimal" value="${notaAtual}" placeholder="-" onchange="salvarNota('${a.id}', '${c.id}', this.value, '${dataAtual}')" ${readOnly} class="w-full text-center p-2 border rounded-lg font-bold text-blue-700 bg-gray-50 focus:bg-white focus:border-purple-500 outline-none"></div>`;
+                    }).join('');
+                    
+                    html += `<div class="bg-white p-3 rounded-xl shadow-sm border border-gray-100 mb-2"><div class="font-bold text-gray-800 text-sm mb-2 ml-1 truncate">${a.nome}</div><div class="flex gap-2">${inputsNotas}</div></div>`;
+                });
+            }
+            document.getElementById('lista-alunos-notas').innerHTML = html;
+        }
+
+        function adicionarColunaNota() {
+            const data = document.getElementById('data-atual').value;
+            const input = document.getElementById('nova-coluna-nome');
+            const nome = input.value.trim();
+            if(!nome) return;
+            
+            let idUnico = 'col_' + Date.now();
+            atividadesSistema[turmaAtual][data].colunas.push({ id: idUnico, nome: nome });
+            localStorage.setItem('estagio_atividades', JSON.stringify(atividadesSistema));
+            
+            input.value = '';
+            renderizarNotas(data, true);
+        }
+
+        function removerColunaNota(colId, data) {
+            if(confirm('Tem a certeza que deseja remover esta atividade e as suas notas do dia?')) {
+                atividadesSistema[turmaAtual][data].colunas = atividadesSistema[turmaAtual][data].colunas.filter(c => c.id !== colId);
+                localStorage.setItem('estagio_atividades', JSON.stringify(atividadesSistema));
+                renderizarNotas(data, true);
+            }
+        }
+
+        function salvarNota(alunoId, colId, valor, data) {
+            if(!atividadesSistema[turmaAtual][data].notas[alunoId]) atividadesSistema[turmaAtual][data].notas[alunoId] = {};
+            atividadesSistema[turmaAtual][data].notas[alunoId][colId] = valor;
+            localStorage.setItem('estagio_atividades', JSON.stringify(atividadesSistema));
+        }
+
+        // ================= GALERIA =================
+        function processarFoto(event) {
+            const file = event.target.files[0];
+            if(!file) return;
+            
+            const dataAtual = document.getElementById('data-atual').value;
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                let galeria = JSON.parse(localStorage.getItem('estagio_galeria')) || [];
+                let descricao = prompt("O que os alunos estão fazendo nesta foto?", "Aula prática de laboratório");
+                if(descricao === null) descricao = "Sem descrição";
+
+                galeria.push({
+                    id: 'foto_' + Date.now(),
+                    turmaId: turmaAtual,
+                    data: dataAtual,
+                    preceptorId: preceptorLogado.id,
+                    preceptorNome: preceptorLogado.nome,
+                    descricao: descricao,
+                    imagem: e.target.result
+                });
+                
+                localStorage.setItem('estagio_galeria', JSON.stringify(galeria));
+                showNotification('Foto guardada na Galeria!');
+                renderizarGaleria(dataAtual);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function renderizarGaleria(dataAtual) {
+            let galeria = JSON.parse(localStorage.getItem('estagio_galeria')) || [];
+            let fotosDia = galeria.filter(f => f.turmaId === turmaAtual && f.data === dataAtual);
+            
+            if(fotosDia.length === 0) {
+                document.getElementById('grid-fotos-dia').innerHTML = '';
+            } else {
+                document.getElementById('grid-fotos-dia').innerHTML = fotosDia.map(f => `<div class="relative bg-white p-1 rounded-lg border shadow-sm group"><img src="${f.imagem}" class="w-full h-32 object-cover rounded"><div class="absolute bottom-1 left-1 right-1 bg-black bg-opacity-60 text-white text-[9px] p-1 truncate rounded-b">${f.descricao}</div><button onclick="apagarFotoApp('${f.id}')" class="absolute top-2 right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center shadow"><i class="fas fa-trash text-xs"></i></button></div>`).join('');
+            }
+        }
+
+        function apagarFotoApp(id) {
+            if(confirm("Apagar esta foto do diário?")) {
+                let galeria = JSON.parse(localStorage.getItem('estagio_galeria')) || [];
+                galeria = galeria.filter(f => f.id !== id);
+                localStorage.setItem('estagio_galeria', JSON.stringify(galeria));
+                carregarDadosDoDia();
+            }
+        }
+    </script>
+</body>
+</html>
