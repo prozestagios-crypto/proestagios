@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão de Estágio - Admin Proz</title>
+    
+    <!-- Bibliotecas base -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- SUPABASE CDN (Adicionado para evitar erro de inicialização) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        .custom-scroll::-webkit-scrollbar { width: 8px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px;}
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px;}
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        @media print {
+            body > div:not(#modal-container) { display: none !important; }
+            #modal-container { position: static !important; display: block !important; background: white !important; padding: 0 !important; }
+            #area-impressao { position: static !important; max-width: 100% !important; max-height: none !important; width: 100% !important; height: auto !important; box-shadow: none !important; border: none !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
+            #modal-conteudo { overflow: visible !important; height: auto !important; padding: 0 !important; }
+            .no-print { display: none !important; }
+            table { page-break-inside: auto; width: 100%; border-collapse: collapse; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            thead { display: table-header-group; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+            body { background: white !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+    
+    <!-- TELA DE LOADING (Sincronização Nuvem) -->
+    <div id="loading-overlay" class="hidden fixed inset-0 z-[9999] bg-black bg-opacity-80 flex flex-col items-center justify-center no-print">
+        <i class="fas fa-cloud-upload-alt text-orange-500 text-6xl mb-4 animate-bounce"></i>
+        <h2 class="text-white text-2xl font-bold mb-2" id="loading-texto">Sincronizando com a Nuvem...</h2>
+        <p class="text-gray-400 text-sm">Por favor, não feche esta janela.</p>
+    </div>
+
+    <!-- Notificações -->
+    <div id="notification" class="fixed top-4 right-4 z-50 transform transition-transform duration-300 translate-x-full no-print">
+        <div class="bg-green-500 text-white px-6 py-3 rounded shadow-lg flex items-center gap-2 font-bold">
+            <i class="fas fa-check-circle"></i><span id="notification-msg">Sucesso!</span>
+        </div>
+    </div>
+
+    <div class="flex h-screen overflow-hidden main-wrapper">
+        
+        <aside class="w-64 bg-purple-900 text-white flex flex-col no-print shadow-lg z-10">
+            <div class="bg-purple-900 w-full py-6 flex flex-col items-center justify-center border-b border-purple-800">
+                <img src="logo.png" alt="Logo Proz" class="h-12 object-contain" onerror="this.src='https://via.placeholder.com/150x50/581c87/ffffff?text=LOGO.PNG'">
+                <p class="text-xs text-purple-300 mt-2 uppercase font-bold tracking-wider">Administração</p>
+            </div>
+            <nav class="flex-1 p-4 space-y-2 overflow-y-auto custom-scroll">
+                <button onclick="switchTab('dashboard')" id="btn-dashboard" class="w-full flex items-center gap-3 px-4 py-3 rounded bg-purple-800 hover:bg-purple-700 transition font-medium"><i class="fas fa-chart-line w-5"></i> Dashboard</button>
+                <button onclick="switchTab('preceptores')" id="btn-preceptores" class="w-full flex items-center gap-3 px-4 py-3 rounded hover:bg-purple-800 transition font-medium"><i class="fas fa-user-md w-5"></i> Preceptores</button>
+                <button onclick="switchTab('turmas')" id="btn-turmas" class="w-full flex items-center gap-3 px-4 py-3 rounded hover:bg-purple-800 transition font-medium"><i class="fas fa-users-class w-5"></i> Turmas Ativas</button>
+                <button onclick="switchTab('calendario')" id="btn-calendario" class="w-full flex items-center gap-3 px-4 py-3 rounded hover:bg-purple-800 transition font-medium"><i class="fas fa-calendar-alt w-5"></i> Calendário</button>
+                <button onclick="switchTab('master')" id="btn-master" class="w-full flex items-center gap-3 px-4 py-3 rounded hover:bg-purple-800 transition font-medium text-orange-300"><i class="fas fa-user-edit w-5"></i> Edição Master</button>
+                <button onclick="switchTab('finalizadas')" id="btn-finalizadas" class="w-full flex items-center gap-3 px-4 py-3 rounded hover:bg-purple-800 transition font-medium"><i class="fas fa-flag-checkered w-5"></i> Histórico</button>
+                <button onclick="switchTab('alunos')" id="btn-alunos" class="w-full flex items-center gap-3 px-4 py-3 rounded hover:bg-purple-800 transition font-medium"><i class="fas fa-user-graduate w-5"></i> Alunos</button>
+                <button onclick="switchTab('galeria')" id="btn-galeria" class="w-full flex items-center gap-3 px-4 py-3 rounded hover:bg-purple-800 transition font-medium"><i class="fas fa-camera-retro w-5"></i> Galeria</button>
+            </nav>
+            <div class="p-4 border-t border-purple-800 space-y-2">
+                <!-- Botão de Sincronização Supabase -->
+                <button onclick="sincronizarComNuvem()" class="w-full flex items-center justify-center gap-2 px-4 py-3 rounded bg-blue-600 hover:bg-blue-700 text-sm font-bold shadow transition">
+                    <i class="fas fa-cloud-sync"></i> Sincronizar Nuvem
+                </button>
+                <button onclick="limparSistema()" class="w-full flex items-center justify-center gap-2 px-4 py-2 rounded border border-red-500 text-red-400 hover:bg-red-600 hover:text-white text-xs font-bold transition">
+                    <i class="fas fa-trash-alt"></i> Resetar Testes
+                </button>
+            </div>
+        </aside>
+
+        <main class="flex-1 overflow-y-auto p-8 custom-scroll bg-gray-50 no-print">
+            
+            <!-- DASHBOARD -->
+            <div id="tab-dashboard" class="block">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Visão Geral</h2>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-purple-900">
+                        <p class="text-gray-500 text-sm font-semibold">Preceptores</p>
+                        <h3 class="text-3xl font-black text-purple-900 mt-1" id="dash-preceptores">0</h3>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-orange-500">
+                        <p class="text-gray-500 text-sm font-semibold">Turmas</p>
+                        <h3 class="text-3xl font-black text-orange-600 mt-1" id="dash-turmas">0</h3>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow-sm border-l-4 border-green-500">
+                        <p class="text-gray-500 text-sm font-semibold">Alunos Ativos</p>
+                        <h3 class="text-3xl font-black text-green-600 mt-1" id="dash-alunos">0</h3>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="bg-white p-6 rounded-lg shadow-sm border lg:col-span-2">
+                        <h3 class="text-lg font-bold text-gray-700 mb-4">Frequência Média (%)</h3>
+                        <div class="relative h-64 w-full"><canvas id="graficoFrequencia"></canvas></div>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow-sm border border-red-200">
+                        <h3 class="text-md font-bold text-red-600 mb-1"><i class="fas fa-exclamation-triangle"></i> Alerta de Faltas</h3>
+                        <p class="text-xs text-gray-500 mb-3 border-b pb-2">Limite Máximo: <strong>5 dias (30h)</strong></p>
+                        <ul id="lista-risco" class="space-y-2 h-48 overflow-y-auto custom-scroll text-sm divide-y"></ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TURMAS ATIVAS -->
+            <div id="tab-turmas" class="hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">Gerenciar Turmas Ativas</h2>
+                    <button onclick="exportarBackupXLSX()" class="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold shadow hover:bg-green-700 transition">
+                        <i class="fas fa-file-excel mr-1"></i> Backup Chamadas (XLSX)
+                    </button>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-sm border mb-6">
+                    <form id="form-turma" class="grid grid-cols-1 md:grid-cols-4 gap-4" onsubmit="event.preventDefault(); saveTurma();">
+                        <div class="md:col-span-2"><label class="text-xs font-bold text-gray-600">Nome da Turma</label><input type="text" id="turma-nome" required class="w-full p-2 border rounded focus:ring-2 focus:ring-purple-500 outline-none"></div>
+                        <div><label class="text-xs font-bold text-gray-600">Preceptor</label><select id="turma-preceptor" required class="w-full p-2 border rounded focus:ring-2 focus:ring-purple-500 outline-none"></select></div>
+                        <div><label class="text-xs font-bold text-gray-600">Turno</label><select id="turma-turno" class="w-full p-2 border rounded focus:ring-2 focus:ring-purple-500 outline-none"><option>Manhã</option><option>Tarde</option><option>Noite</option><option>Integral</option></select></div>
+                        
+                        <div><label class="text-xs font-bold text-gray-600">Início do Estágio</label><input type="date" id="turma-inicio" required class="w-full p-2 border rounded focus:ring-2 focus:ring-purple-500 outline-none"></div>
+                        <div><label class="text-xs font-bold text-gray-600">Fim do Estágio</label><input type="date" id="turma-fim" required class="w-full p-2 border rounded focus:ring-2 focus:ring-purple-500 outline-none"></div>
+                        
+                        <div class="md:col-span-2 flex justify-end items-end">
+                            <button type="submit" class="bg-orange-500 text-white px-6 py-2 rounded font-bold shadow-md hover:bg-orange-600 transition w-full md:w-auto">Criar Turma</button>
+                        </div>
+                    </form>
+                </div>
+                
+                <input type="text" id="search-turma" oninput="renderTurmas()" placeholder="Buscar turma..." class="w-full p-3 border rounded mb-4 shadow-sm focus:ring-2 focus:ring-purple-500 outline-none">
+                <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
+                    <table class="w-full text-left"><thead class="bg-gray-50 border-b"><tr><th class="p-4">Turma (Turno)</th><th class="p-4">Período</th><th class="p-4">Preceptor</th><th class="p-4 text-right">Ações</th></tr></thead><tbody id="list-turmas" class="divide-y"></tbody></table>
+                </div>
+            </div>
+
+            <!-- === CALENDÁRIO DE AULAS === -->
+            <div id="tab-calendario" class="hidden">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Planejamento de Calendário</h2>
+                
+                <div class="bg-white p-6 rounded-lg shadow-sm border mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Selecione a Turma</label>
+                        <select id="cal-select-turma" onchange="carregarCalendarioTurma()" class="w-full p-2 border rounded outline-none bg-gray-50 focus:ring-2 focus:ring-purple-500"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-600 mb-1">Preceptor Responsável</label>
+                        <input type="text" id="cal-preceptor-nome" readonly class="w-full p-2 border rounded bg-gray-100 text-gray-600 font-medium outline-none">
+                    </div>
+                    <div class="bg-purple-50 border border-purple-200 p-3 rounded text-center">
+                        <span class="text-xs text-purple-700 font-bold block">TOTAL DE AULAS (PERÍODO)</span>
+                        <span class="text-2xl font-black text-purple-900" id="cal-total-dias">0</span>
+                    </div>
+                </div>
+
+                <div id="area-painel-calendario" class="hidden space-y-6">
+                    <div id="painel-controle-calendario" class="bg-white p-6 rounded-lg shadow-sm border flex flex-col md:flex-row justify-between items-center gap-4 transition-all"></div>
+                    <div class="bg-white p-6 rounded-lg shadow-sm border">
+                        <div class="flex flex-col xl:flex-row justify-between items-center mb-6 gap-4 border-b pb-4">
+                            <div id="controles-mes" class="flex items-center gap-4">
+                                <button onclick="mudarMes(-1)" class="bg-gray-100 px-4 py-2 rounded hover:bg-gray-200 font-bold"><i class="fas fa-chevron-left"></i></button>
+                                <h3 class="text-lg font-bold text-purple-900 uppercase w-48 text-center" id="cal-mes-ano-titulo">Mês / Ano</h3>
+                                <button onclick="mudarMes(1)" class="bg-gray-100 px-4 py-2 rounded hover:bg-gray-200 font-bold"><i class="fas fa-chevron-right"></i></button>
+                            </div>
+                            <div class="flex bg-gray-100 rounded p-1">
+                                <button onclick="setVisCalendario('mes')" id="btn-vis-mes" class="px-3 py-1.5 text-sm font-bold rounded shadow-sm bg-white text-purple-700 transition">Mês a Mês</button>
+                                <button onclick="setVisCalendario('empilhado')" id="btn-vis-empilhado" class="px-3 py-1.5 text-sm font-bold rounded text-gray-500 hover:text-purple-700 transition">Todos os Meses</button>
+                                <button onclick="setVisCalendario('lista')" id="btn-vis-lista" class="px-3 py-1.5 text-sm font-bold rounded text-gray-500 hover:text-purple-700 transition">Lista</button>
+                            </div>
+                        </div>
+
+                        <div id="view-grid" class="block">
+                            <div class="grid grid-cols-7 gap-2 text-center font-bold text-gray-500 text-sm mb-2">
+                                <div>Dom</div><div>Seg</div><div>Ter</div><div>Qua</div><div>Qui</div><div>Sex</div><div>Sáb</div>
+                            </div>
+                            <div id="grid-dias-calendario" class="grid grid-cols-7 gap-2"></div>
+                        </div>
+
+                        <div id="view-empilhado" class="hidden">
+                            <div id="empilhado-dias-calendario" class="max-h-[600px] overflow-y-auto custom-scroll pr-2 space-y-6"></div>
+                        </div>
+
+                        <div id="view-lista" class="hidden">
+                            <div class="bg-gray-50 p-2 rounded border mb-2 text-xs text-gray-500 text-center uppercase tracking-wider font-bold">Cronograma em Lista</div>
+                            <div id="lista-dias-calendario" class="space-y-2 max-h-[600px] overflow-y-auto custom-scroll pr-2"></div>
+                        </div>
+                        
+                        <div id="legenda-calendario" class="flex flex-wrap gap-4 mt-6 pt-4 border-t text-xs text-gray-600 justify-center"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === ABA: EDIÇÃO MASTER (ADMIN) === -->
+            <div id="tab-master" class="hidden">
+                <div class="mb-6 border-b pb-4">
+                    <h2 class="text-2xl font-bold text-orange-600"><i class="fas fa-user-edit mr-2"></i>Edição Master de Chamadas e Notas</h2>
+                    <p class="text-gray-500 text-sm mt-1">Modo avançado para Coordenação: Sobreponha ou corrija faltas e notas lançadas indevidamente pelos preceptores.</p>
+                </div>
+                
+                <div class="bg-white p-6 rounded-lg shadow-sm border border-orange-200 mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Selecione a Turma</label>
+                        <select id="master-turma" onchange="popularDatasMaster()" class="w-full p-3 border rounded outline-none bg-gray-50 focus:ring-2 focus:ring-orange-500"></select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Data da Aula</label>
+                        <select id="master-data" onchange="carregarDadosMaster()" class="w-full p-3 border rounded outline-none bg-gray-50 focus:ring-2 focus:ring-orange-500">
+                            <option value="">Selecione a turma primeiro...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="master-area-alunos" class="hidden bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="p-4 border-b bg-orange-50 flex justify-between items-center">
+                        <h3 class="font-bold text-orange-900">Correção de Diário</h3>
+                        <span class="bg-orange-200 text-orange-800 text-xs font-bold px-3 py-1 rounded-full"><i class="fas fa-exclamation-triangle"></i> Acionará substituição direta</span>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-gray-50 text-gray-700 border-b" id="thead-master"></thead>
+                            <tbody id="tbody-master" class="divide-y"></tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="p-4 bg-gray-50 border-t flex justify-end">
+                        <button onclick="salvarDadosMaster()" class="w-full md:w-auto bg-orange-600 text-white px-8 py-3 rounded font-bold shadow-md hover:bg-orange-700 transition flex items-center justify-center gap-2">
+                            <i class="fas fa-save"></i> Forçar Gravação dos Dados
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TURMAS FIN. -->
+            <div id="tab-finalizadas" class="hidden">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Turmas Finalizadas</h2>
+                <div class="bg-white rounded border overflow-hidden shadow-sm">
+                    <table class="w-full text-left"><thead class="bg-gray-50 border-b"><tr><th class="p-4">Turma</th><th class="p-4">Preceptor</th><th class="p-4 text-right">Ações</th></tr></thead><tbody id="list-turmas-finalizadas" class="divide-y"></tbody></table>
+                </div>
+            </div>
+
+            <!-- ALUNOS -->
+            <div id="tab-alunos" class="hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">Gerenciar Alunos</h2>
+                    <button onclick="exportarCSVAlunos()" class="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold shadow hover:bg-green-700 transition"><i class="fas fa-file-excel mr-1"></i> Exportar Dados Alunos</button>
+                </div>
+
+                <div class="bg-white p-6 rounded-lg shadow-sm border mb-6">
+                    <h3 class="font-bold text-purple-900 mb-2">Adicionar Individualmente</h3>
+                    <form id="form-aluno" class="flex gap-4 mb-4 border-b pb-4" onsubmit="event.preventDefault(); saveAluno();">
+                        <input type="text" id="aluno-nome" required placeholder="Nome do Aluno" class="flex-1 p-2 border rounded focus:ring-2 focus:ring-purple-500 outline-none">
+                        <select id="aluno-turma" required class="flex-1 p-2 border rounded focus:ring-2 focus:ring-purple-500 outline-none"></select>
+                        <button type="submit" class="bg-orange-500 text-white px-6 py-2 rounded font-bold shadow-md hover:bg-orange-600 transition">Cadastrar</button>
+                    </form>
+                    
+                    <h3 class="font-bold text-purple-900 mb-2 mt-4 text-sm">Importação em Lote (Arquivo Excel/CSV)</h3>
+                    <div class="flex gap-4 items-center">
+                        <select id="import-turma" class="p-2 border rounded w-1/3 focus:ring-2 focus:ring-purple-500 outline-none"></select>
+                        <input type="file" id="file-csv" accept=".csv" class="flex-1 p-1 border rounded text-sm focus:ring-2 focus:ring-purple-500 outline-none">
+                        <button onclick="importarCSV()" class="bg-purple-600 text-white px-4 py-2 rounded text-sm font-bold shadow hover:bg-purple-700 transition">Importar Lista</button>
+                    </div>
+                </div>
+                
+                <div class="flex gap-2 mb-4">
+                    <input type="text" id="search-aluno" oninput="mudarPagina(1)" placeholder="Buscar aluno..." class="flex-1 p-3 border rounded shadow-sm focus:ring-2 focus:ring-purple-500 outline-none">
+                    <select id="filter-turno" onchange="mudarPagina(1)" class="p-3 border rounded shadow-sm focus:ring-2 focus:ring-purple-500 outline-none"><option value="">Todos os Turnos</option><option value="Manhã">Manhã</option><option value="Tarde">Tarde</option><option value="Noite">Noite</option><option value="Integral">Integral</option></select>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
+                    <table class="w-full text-left"><thead class="bg-gray-50 border-b"><tr><th class="p-4">Nome / Status</th><th class="p-4">Turma Atual</th><th class="p-4 text-right">Ações</th></tr></thead><tbody id="list-alunos" class="divide-y"></tbody></table>
+                    <div class="p-4 border-t bg-gray-50 flex justify-between items-center text-sm">
+                        <span id="page-info" class="text-gray-600 font-medium">Mostrando 1 a 15 de X</span>
+                        <div class="flex gap-2">
+                            <button onclick="mudarPagina(currentPage - 1)" class="px-3 py-1.5 bg-white border rounded shadow-sm font-bold hover:bg-gray-50">Anterior</button>
+                            <button onclick="mudarPagina(currentPage + 1)" class="px-3 py-1.5 bg-white border rounded shadow-sm font-bold hover:bg-gray-50">Próxima</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PRECEPTORES -->
+            <div id="tab-preceptores" class="hidden">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">Preceptores</h2>
+                <div class="bg-white p-6 rounded-lg shadow-sm border mb-6">
+                    <form id="form-preceptor" class="flex gap-4" onsubmit="event.preventDefault(); savePreceptor();">
+                        <input type="text" id="prec-nome" required placeholder="Nome" class="flex-1 p-3 border rounded focus:ring-2 focus:ring-purple-500 outline-none">
+                        <input type="text" id="prec-login" required placeholder="Login" class="flex-1 p-3 border rounded focus:ring-2 focus:ring-purple-500 outline-none">
+                        <input type="password" id="prec-senha" required placeholder="Senha" class="flex-1 p-3 border rounded focus:ring-2 focus:ring-purple-500 outline-none">
+                        <button type="submit" class="bg-orange-500 text-white px-6 py-2 rounded font-bold shadow-md hover:bg-orange-600 transition">Cadastrar</button>
+                    </form>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
+                    <table class="w-full text-left"><thead class="bg-gray-50 border-b"><tr><th class="p-4">Nome</th><th class="p-4">Login</th><th class="p-4 text-right">Ações</th></tr></thead><tbody id="list-preceptores" class="divide-y"></tbody></table>
+                </div>
+            </div>
+
+            <!-- GALERIA -->
+            <div id="tab-galeria" class="hidden">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">Galeria</h2>
+                    <button onclick="carregarGaleria()" class="bg-purple-100 text-purple-700 px-4 py-2 rounded font-bold hover:bg-purple-200 transition">Atualizar</button>
+                </div>
+                <div id="grid-galeria" class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6"></div>
+            </div>
+            
+        </main>
+    </div>
+
+    <!-- MODAIS DE EDIÇÃO -->
+    <div id="modal-editar" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-60 no-print">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
+            <div class="flex justify-between items-center p-4 border-b bg-purple-50">
+                <h3 class="text-lg font-bold text-purple-900" id="titulo-editar">Editar</h3>
+                <button onclick="fecharModalEditar()" class="text-gray-500 hover:text-red-500 text-2xl font-bold">&times;</button>
+            </div>
+            <form id="form-editar-geral" onsubmit="event.preventDefault(); salvarEdicao();" class="p-6 space-y-4">
+                <div id="campos-editar"></div>
+                <div class="flex justify-end gap-2 mt-4 pt-4 border-t">
+                    <button type="button" onclick="fecharModalEditar()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded font-bold hover:bg-gray-300">Cancelar</button>
+                    <button type="submit" class="bg-orange-500 text-white px-4 py-2 rounded font-bold shadow hover:bg-orange-600">Salvar Alterações</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL RELATÓRIOS (O QUE É IMPRESSO) -->
+    <div id="modal-container" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-60">
+        <div id="area-impressao" class="bg-white rounded-lg shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div class="flex justify-between items-center p-6 border-b no-print bg-purple-50">
+                <h3 class="text-xl font-bold text-purple-900" id="modal-titulo">Relatório</h3>
+                <div class="flex gap-4">
+                    <button onclick="window.print()" class="bg-purple-600 text-white px-4 py-2 rounded font-bold shadow hover:bg-purple-700 transition"><i class="fas fa-print"></i> PDF / Imprimir</button>
+                    <button onclick="document.getElementById('modal-container').classList.replace('flex','hidden')" class="text-gray-500 hover:text-red-500 text-3xl font-bold">&times;</button>
+                </div>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1 text-gray-800" id="modal-conteudo"></div>
+        </div>
+    </div>
+
+    <script>
+        // ================= CONFIGURAÇÃO SEGURA DO SUPABASE =================
+        // NUNCA declare "const supabase = ...". Use outro nome como "clienteSupabase".
+        
+        const SUPABASE_URL = 'SUA_URL_DO_SUPABASE_AQUI'; // Ex: 'https://xyz.supabase.co'
+        const SUPABASE_KEY = 'SUA_CHAVE_ANON_AQUI';
+        
+        let clienteSupabase = null;
+        if (typeof supabase !== 'undefined') {
+            // Inicializa sem causar o erro de "Identifier already declared"
+            clienteSupabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        }
+
+        async function sincronizarComNuvem() {
+            const loadingDiv = document.getElementById('loading-overlay');
+            loadingDiv.classList.remove('hidden');
+
+            try {
+                if (!clienteSupabase || SUPABASE_URL === 'SUA_URL_DO_SUPABASE_AQUI') {
+                    throw new Error("Supabase não configurado. Por favor, insira a sua URL e Chave no código-fonte.");
+                }
+
+                // AQUI VOCÊ COLOCA A LÓGICA DE SALVAR/LER DO SUPABASE
+                // Exemplo:
+                // const { error } = await clienteSupabase.from('tabela_alunos').upsert(alunos);
+                // if (error) throw error;
+                
+                // Simulação de delay para teste visual (pode apagar depois)
+                await new Promise(resolve => setTimeout(resolve, 1500));
+
+                showNotification('Dados sincronizados com a nuvem!');
+            } catch (erro) {
+                console.error("Erro Supabase:", erro);
+                alert("Falha na sincronização: " + erro.message);
+            } finally {
+                // ESTA LINHA GARANTE QUE O ECRÃ NUNCA FICA BLOQUEADO
+                loadingDiv.classList.add('hidden');
+            }
+        }
+        // ====================================================================
+
+        let preceptores = JSON.parse(localStorage.getItem('estagio_preceptores')) || [];
+        let turmas = JSON.parse(localStorage.getItem('estagio_turmas')) || [];
+        let alunos = JSON.parse(localStorage.getItem('estagio_alunos')) || [];
+        let calendarioAulas = JSON.parse(localStorage.getItem('estagio_calendario')) || {}; 
+        
+        let masterFrequencias = {};
+        let masterAtividades = {};
+        
+        let chartInstance = null;
+        let currentPage = 1;
+        const itemsPerPage = 15;
+        let tipoEditando = null, idEditando = null;
+        
+        let calDataAtual = new Date();
+        let modoVisCalendario = 'mes'; 
+
+        // ================= ALGORITMO DE FERIADOS =================
+        let cacheFeriados = {};
+        function checkFeriado(isoStr) {
+            let ano = parseInt(isoStr.split('-')[0]);
+            if (!cacheFeriados[ano]) {
+                let f = {};
+                f[`${ano}-01-01`] = "Confraternização Universal";
+                f[`${ano}-04-21`] = "Tiradentes";
+                f[`${ano}-05-01`] = "Dia do Trabalhador";
+                f[`${ano}-09-07`] = "Independência do Brasil";
+                f[`${ano}-10-12`] = "Nossa Senhora Aparecida";
+                f[`${ano}-11-02`] = "Finados";
+                f[`${ano}-11-15`] = "Proclamação da República";
+                f[`${ano}-12-25`] = "Natal";
+                
+                let a = ano % 19, b = Math.floor(ano/100), c = ano % 100;
+                let d = Math.floor(b/4), e = b % 4, f_ = Math.floor((b+8)/25);
+                let g = Math.floor((b-f_+1)/3);
+                let h = (19*a + b - d - g + 15) % 30;
+                let i = Math.floor(c/4), k = c % 4;
+                let l = (32 + 2*e + 2*i - h - k) % 7;
+                let m = Math.floor((a + 11*h + 22*l)/451);
+                let mes = Math.floor((h + l - 7*m + 114)/31);
+                let dia = ((h + l - 7*m + 114) % 31) + 1;
+                
+                let pascoa = new Date(ano, mes-1, dia);
+                
+                let addD = (dt, d) => {
+                    let nd = new Date(dt);
+                    nd.setDate(nd.getDate() + d);
+                    return `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}-${String(nd.getDate()).padStart(2,'0')}`;
+                };
+                
+                f[addD(pascoa, -47)] = "Carnaval";
+                f[addD(pascoa, -2)] = "Sexta-feira Santa";
+                f[addD(pascoa, 0)] = "Páscoa";
+                f[addD(pascoa, 60)] = "Corpus Christi";
+                
+                cacheFeriados[ano] = f;
+            }
+            return cacheFeriados[ano][isoStr]; 
+        }
+
+        function init() { 
+            renderPreceptores(); renderTurmas(); mudarPagina(1); updateSelects(); updateDashboard(); 
+        }
+
+        function limparSistema() {
+            if(confirm("ATENÇÃO: Isso apagará TODOS os dados do sistema local.\n\nDeseja continuar?")) {
+                localStorage.clear(); window.location.reload();
+            }
+        }
+        
+        function switchTab(tabId) {
+            ['dashboard', 'preceptores', 'turmas', 'calendario', 'master', 'finalizadas', 'alunos', 'galeria'].forEach(t => {
+                document.getElementById(`tab-${t}`).classList.replace('block','hidden');
+                document.getElementById(`btn-${t}`).classList.remove('bg-purple-800');
+            });
+            document.getElementById(`tab-${tabId}`).classList.replace('hidden','block');
+            document.getElementById(`btn-${tabId}`).classList.add('bg-purple-800');
+            
+            if(tabId === 'galeria') carregarGaleria(); 
+            if(tabId === 'dashboard') updateDashboard();
+            if(tabId === 'calendario') carregarCalendarioTurma();
+        }
+
+        function showNotification(msg) {
+            const notif = document.getElementById('notification');
+            document.getElementById('notification-msg').innerText = msg;
+            notif.classList.remove('translate-x-full');
+            setTimeout(() => notif.classList.add('translate-x-full'), 3000);
+        }
+
+        function updateSelects() {
+            let pOpts = '<option value="">Selecione...</option>';
+            preceptores.forEach(p => pOpts += `<option value="${p.id}">${p.nome}</option>`);
+            document.getElementById('turma-preceptor').innerHTML = pOpts;
+            
+            let tOpts = '<option value="">Selecione...</option>';
+            turmas.filter(t => t.status !== 'finalizada').forEach(t => tOpts += `<option value="${t.id}">${t.nome} (${t.turno||'-'})</option>`);
+            document.getElementById('aluno-turma').innerHTML = tOpts;
+            document.getElementById('import-turma').innerHTML = tOpts;
+            document.getElementById('cal-select-turma').innerHTML = tOpts;
+            document.getElementById('master-turma').innerHTML = tOpts; 
+        }
+
+        // ================= CALENDÁRIO =================
+        function carregarCalendarioTurma() {
+            const tId = document.getElementById('cal-select-turma').value;
+            const area = document.getElementById('area-painel-calendario');
+            
+            if(!tId) { area.classList.add('hidden'); document.getElementById('cal-preceptor-nome').value = ''; document.getElementById('cal-total-dias').innerText = '0'; return; }
+            
+            const turma = turmas.find(t => t.id === tId);
+            const prec = preceptores.find(p => p.id === turma.preceptorId);
+            document.getElementById('cal-preceptor-nome').value = prec ? prec.nome : 'Não vinculado';
+            
+            area.classList.remove('hidden');
+            renderizarCalendario();
+        }
+
+        function setVisCalendario(modo) {
+            modoVisCalendario = modo;
+            
+            let btnMes = document.getElementById('btn-vis-mes');
+            let btnEmpilhado = document.getElementById('btn-vis-empilhado');
+            let btnLista = document.getElementById('btn-vis-lista');
+            
+            let activeClass = 'px-3 py-1.5 text-sm font-bold rounded shadow-sm bg-white text-purple-700 transition';
+            let inactiveClass = 'px-3 py-1.5 text-sm font-bold rounded text-gray-500 hover:text-purple-700 transition bg-transparent';
+
+            btnMes.className = modo === 'mes' ? activeClass : inactiveClass;
+            btnEmpilhado.className = modo === 'empilhado' ? activeClass : inactiveClass;
+            btnLista.className = modo === 'lista' ? activeClass : inactiveClass;
+
+            renderizarCalendario();
+        }
+
+        function gerarDiasBase() {
+            const tId = document.getElementById('cal-select-turma').value;
+            const turma = turmas.find(t => t.id === tId);
+            if(!turma.inicio || !turma.fim) return alert('Esta turma precisa ter Data de Início e Fim cadastradas!');
+
+            const checks = document.querySelectorAll('.check-dia:checked');
+            const diasSelecionados = Array.from(checks).map(c => parseInt(c.value));
+            if(diasSelecionados.length === 0) return alert('Selecione pelo menos um dia da semana!');
+
+            if(!calendarioAulas[tId]) calendarioAulas[tId] = {};
+
+            let curr = new Date(turma.inicio + 'T00:00:00');
+            let fim = new Date(turma.fim + 'T00:00:00');
+
+            while(curr <= fim) {
+                let diaSemana = curr.getDay();
+                let isoStr = curr.toISOString().split('T')[0];
+                
+                if(diasSelecionados.includes(diaSemana)) {
+                    let nomeFeriado = checkFeriado(isoStr);
+                    if(!nomeFeriado) {
+                        calendarioAulas[tId][isoStr] = { status: 'agendada', justificativa: '' };
+                    }
+                }
+                curr.setDate(curr.getDate() + 1);
+            }
+
+            localStorage.setItem('estagio_calendario', JSON.stringify(calendarioAulas));
+            renderizarCalendario();
+            showNotification('Dias aplicados ignorando feriados! Faça ajustes finais e Oficialize.');
+        }
+
+        function salvarCronogramaBase() {
+            const tId = document.getElementById('cal-select-turma').value;
+            if(!calendarioAulas[tId]) calendarioAulas[tId] = {};
+            calendarioAulas[tId]['_status'] = 'salvo';
+            localStorage.setItem('estagio_calendario', JSON.stringify(calendarioAulas));
+            showNotification('Cronograma Oficializado!');
+            renderizarCalendario();
+        }
+
+        function desbloquearCronograma() {
+            const tId = document.getElementById('cal-select-turma').value;
+            if(calendarioAulas[tId]) {
+                delete calendarioAulas[tId]['_status'];
+                localStorage.setItem('estagio_calendario', JSON.stringify(calendarioAulas));
+                showNotification('Modo de Criação liberado!');
+                renderizarCalendario();
+            }
+        }
+
+        function mudarMes(direcao) { calDataAtual.setMonth(calDataAtual.getMonth() + direcao); renderizarCalendario(); }
+
+        function clicarDiaCalendario(isoStr) {
+            const tId = document.getElementById('cal-select-turma').value;
+            const turma = turmas.find(t => t.id === tId);
+            if(!tId || !turma || !turma.inicio || !turma.fim) return;
+
+            let inicioEstagio = new Date(turma.inicio + 'T00:00:00');
+            let fimEstagio = new Date(turma.fim + 'T00:00:00');
+            let dataClicada = new Date(isoStr + 'T00:00:00');
+
+            if(dataClicada < inicioEstagio || dataClicada > fimEstagio) return alert('Este dia está fora do período de vigência.');
+
+            if(!calendarioAulas[tId]) calendarioAulas[tId] = {};
+            let isSalvo = calendarioAulas[tId]['_status'] === 'salvo';
+            let aulaAtual = calendarioAulas[tId][isoStr];
+
+            if (!isSalvo) {
+                if (aulaAtual && aulaAtual.status === 'agendada') delete calendarioAulas[tId][isoStr];
+                else calendarioAulas[tId][isoStr] = { status: 'agendada', justificativa: '' };
+            } else {
+                if(aulaAtual && aulaAtual.status === 'agendada') {
+                    let motivo = prompt("Justificativa para o cancelamento:", "Feriado / Imprevisto");
+                    if(motivo !== null) { calendarioAulas[tId][isoStr] = { status: 'cancelada', justificativa: motivo || 'Cancelada' }; showNotification('Aula cancelada!'); } 
+                } else if(aulaAtual && (aulaAtual.status === 'cancelada' || aulaAtual.status === 'remarcada')) {
+                    delete calendarioAulas[tId][isoStr]; showNotification('Status limpo.');
+                } else {
+                    calendarioAulas[tId][isoStr] = { status: 'remarcada', justificativa: 'Aula Remarcada/Extra' }; showNotification('Aula remarcada!');
+                }
+            }
+            localStorage.setItem('estagio_calendario', JSON.stringify(calendarioAulas)); renderizarCalendario();
+        }
+
+        function atualizarContadorTotalPeriodo(tId) {
+            let totalPeriodo = 0;
+            if(calendarioAulas[tId]) {
+                Object.keys(calendarioAulas[tId]).forEach(k => {
+                    if(k !== '_status') {
+                        let st = calendarioAulas[tId][k].status;
+                        if(st === 'agendada' || st === 'remarcada') totalPeriodo++;
+                    }
+                });
+            }
+            document.getElementById('cal-total-dias').innerText = totalPeriodo;
+        }
+
+        function renderizarCalendario() {
+            const tId = document.getElementById('cal-select-turma').value;
+            const turma = turmas.find(t => t.id === tId);
+            if(!turma) return;
+
+            let isSalvo = (calendarioAulas[tId] && calendarioAulas[tId]['_status'] === 'salvo');
+            atualizarContadorTotalPeriodo(tId);
+
+            let painelHtml = '';
+            if (isSalvo) {
+                painelHtml = `<div><h3 class="font-bold text-gray-700 text-sm"><i class="fas fa-lock text-green-600"></i> Cronograma Oficializado</h3><p class="text-xs text-gray-500">Clique nos dias abaixo para relatar imprevistos.</p></div><button onclick="desbloquearCronograma()" class="bg-gray-100 border text-gray-700 px-4 py-2 rounded text-sm font-bold shadow-sm hover:bg-gray-200 transition"><i class="fas fa-unlock text-gray-500"></i> Habilitar Modo Criação</button>`;
+            } else {
+                painelHtml = `<div><h3 class="font-bold text-orange-600 text-sm"><i class="fas fa-pencil-alt"></i> Modo Criação</h3><p class="text-xs text-gray-500">Preencha automaticante os dias.</p></div><div class="flex flex-wrap items-center gap-4 mt-3 md:mt-0"><div class="flex gap-2 text-sm font-semibold bg-gray-50 p-2 rounded border shadow-inner"><label><input type="checkbox" class="check-dia" value="1"> Seg</label><label><input type="checkbox" class="check-dia" value="2"> Ter</label><label><input type="checkbox" class="check-dia" value="3"> Qua</label><label><input type="checkbox" class="check-dia" value="4"> Qui</label><label><input type="checkbox" class="check-dia" value="5"> Sex</label><label><input type="checkbox" class="check-dia" value="6"> Sáb</label></div><button onclick="gerarDiasBase()" class="bg-purple-600 text-white px-4 py-2 rounded text-sm font-bold shadow hover:bg-purple-700 transition">Preencher</button><button onclick="salvarCronogramaBase()" class="bg-green-600 text-white px-5 py-2 rounded text-sm font-bold shadow hover:bg-green-700 transition"><i class="fas fa-save mr-1"></i> Oficializar</button></div>`;
+            }
+            document.getElementById('painel-controle-calendario').innerHTML = painelHtml;
+
+            let legendaHtml = isSalvo ? `<span class="flex items-center gap-2"><span class="w-4 h-4 bg-green-500 rounded inline-block"></span> Agendada</span><span class="flex items-center gap-2"><span class="w-4 h-4 bg-red-500 rounded inline-block"></span> Cancelada</span><span class="flex items-center gap-2"><span class="w-4 h-4 bg-blue-500 rounded inline-block"></span> Remarcada</span><span class="flex items-center gap-2"><span class="w-4 h-4 bg-yellow-200 rounded inline-block"></span> Feriado Livre</span>` : `<span class="flex items-center gap-2"><span class="w-4 h-4 bg-green-500 rounded inline-block"></span> Agendada</span><span class="flex items-center gap-2"><span class="w-4 h-4 bg-gray-200 rounded inline-block"></span> Livre</span><span class="flex items-center gap-2"><span class="w-4 h-4 bg-yellow-200 border border-yellow-400 rounded inline-block"></span> Feriado Nacional</span>`;
+            document.getElementById('legenda-calendario').innerHTML = legendaHtml;
+
+            document.getElementById('controles-mes').classList.replace(modoVisCalendario === 'mes' ? 'invisible' : 'visible', modoVisCalendario === 'mes' ? 'visible' : 'invisible');
+
+            ['view-grid', 'view-empilhado', 'view-lista'].forEach(id => document.getElementById(id).classList.replace('block', 'hidden'));
+
+            if(modoVisCalendario === 'mes') { document.getElementById('view-grid').classList.replace('hidden', 'block'); renderizarViewMes(tId, turma); }
+            else if(modoVisCalendario === 'empilhado') { document.getElementById('view-empilhado').classList.replace('hidden', 'block'); renderizarViewEmpilhado(tId, turma); }
+            else { document.getElementById('view-lista').classList.replace('hidden', 'block'); renderizarViewListaCompleta(tId, turma); }
+        }
+
+        function gerarBlocoDia(d, isoStr, dentroDoPeriodo, dadosAula, isLista = false) {
+            let nomeFeriado = checkFeriado(isoStr);
+            let corClasse = "bg-gray-50 text-gray-600 border-gray-200"; let statusTexto = "Livre";
+            if(!dentroDoPeriodo) { corClasse = "bg-red-50 text-red-300 border-red-100 opacity-40 cursor-not-allowed"; statusTexto = "Fora Período"; } 
+            else if(dadosAula && dadosAula.status) {
+                if(dadosAula.status === 'agendada') { corClasse = "bg-green-500 text-white font-bold border-green-600"; statusTexto = "Agendada"; }
+                else if(dadosAula.status === 'cancelada') { corClasse = "bg-red-500 text-white font-bold border-red-600"; statusTexto = "Cancelada"; }
+                else if(dadosAula.status === 'remarcada') { corClasse = "bg-blue-500 text-white font-bold border-blue-600"; statusTexto = "Remarcada"; }
+            } else if (nomeFeriado) { corClasse = "bg-yellow-100 text-yellow-800 border-yellow-300"; statusTexto = "Feriado"; }
+            
+            let tooltipAttr = ""; let justif = dadosAula?.justificativa || nomeFeriado || "";
+            if (justif) tooltipAttr = `title="${justif}"`;
+
+            let onclickEvent = dentroDoPeriodo ? `onclick="clicarDiaCalendario('${isoStr}')"` : '';
+            let ponteiro = dentroDoPeriodo ? "cursor-pointer hover:shadow-md hover:border-purple-300" : "";
+            let iconeFeriado = (nomeFeriado && (!dadosAula || dadosAula.status === 'livre')) ? `<i class="fas fa-star text-yellow-500 text-[10px] ml-1"></i>` : '';
+
+            if(isLista) {
+                let badgeClasse = "bg-gray-200 text-gray-600";
+                if(dadosAula?.status === 'agendada') badgeClasse = "bg-green-100 text-green-700 border-green-200";
+                else if(dadosAula?.status === 'cancelada') badgeClasse = "bg-red-100 text-red-700 border-red-200";
+                else if(dadosAula?.status === 'remarcada') badgeClasse = "bg-blue-100 text-blue-700 border-blue-200";
+                else if(nomeFeriado) badgeClasse = "bg-yellow-200 text-yellow-800 border-yellow-400";
+                let nomeDia = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][new Date(isoStr + 'T00:00:00').getDay()];
+
+                return `<div ${onclickEvent} ${tooltipAttr} class="flex justify-between items-center p-3 border rounded ${ponteiro} transition ${corClasse}"><div class="flex items-center gap-4"><span class="font-bold text-gray-700 w-24">${formatData(isoStr)}</span><span class="text-sm font-medium text-gray-500 w-16">${nomeDia}</span>${justif ? `<span class="text-xs italic text-gray-600 hidden md:block"><i class="fas fa-info-circle text-gray-400"></i> ${justif}</span>` : ''}</div><div><span class="px-2 py-1 rounded border text-xs font-bold uppercase tracking-wider ${badgeClasse}">${statusTexto} ${iconeFeriado}</span></div></div>`;
+            }
+            return `<div ${onclickEvent} ${tooltipAttr} class="p-2 border rounded ${ponteiro} flex flex-col justify-between min-h-[75px] transition ${corClasse}"><div class="flex justify-between items-start"><span class="font-bold text-sm">${d}</span>${iconeFeriado}</div><div><span class="text-[10px] uppercase tracking-wider block opacity-90 font-semibold">${statusTexto}</span>${justif ? `<span class="text-[9px] truncate block bg-black bg-opacity-20 px-1 rounded mt-0.5 text-white">${justif}</span>` : ''}</div></div>`;
+        }
+
+        function renderizarViewMes(tId, turma) {
+            const ano = calDataAtual.getFullYear(), mes = calDataAtual.getMonth();
+            document.getElementById('cal-mes-ano-titulo').innerText = `${["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][mes]} de ${ano}`;
+            let gridHtml = '', pd = new Date(ano, mes, 1).getDay(), td = new Date(ano, mes + 1, 0).getDate();
+            for(let i=0; i<pd; i++) gridHtml += `<div class="p-2 border rounded bg-gray-50 text-gray-300 text-xs min-h-[75px]"></div>`;
+            let inicioE = turma.inicio ? new Date(turma.inicio + 'T00:00:00') : null, fimE = turma.fim ? new Date(turma.fim + 'T00:00:00') : null;
+            for(let d=1; d<=td; d++) {
+                let dataDia = new Date(ano, mes, d), isoStr = dataDia.toISOString().split('T')[0];
+                gridHtml += gerarBlocoDia(d, isoStr, (inicioE && fimE && dataDia >= inicioE && dataDia <= fimE), calendarioAulas[tId]?.[isoStr], false);
+            }
+            document.getElementById('grid-dias-calendario').innerHTML = gridHtml;
+        }
+
+        function renderizarViewEmpilhado(tId, turma) {
+            if(!turma || !turma.inicio || !turma.fim) return document.getElementById('empilhado-dias-calendario').innerHTML = '<div class="text-center text-gray-500 py-4">Defina o Início e Fim da turma.</div>';
+            let dIni = new Date(turma.inicio + 'T00:00:00'), dFim = new Date(turma.fim + 'T00:00:00'), mAt = new Date(dIni.getFullYear(), dIni.getMonth(), 1), html = '';
+            while(mAt <= new Date(dFim.getFullYear(), dFim.getMonth(), 1)) {
+                let a = mAt.getFullYear(), m = mAt.getMonth(), g = '';
+                for(let i=0; i<new Date(a, m, 1).getDay(); i++) g += `<div class="p-2 border rounded bg-gray-50 text-gray-300 text-xs min-h-[75px]"></div>`;
+                for(let d=1; d<=new Date(a, m + 1, 0).getDate(); d++) {
+                    let dt = new Date(a, m, d); g += gerarBlocoDia(d, dt.toISOString().split('T')[0], (dt >= dIni && dt <= dFim), calendarioAulas[tId]?.[dt.toISOString().split('T')[0]], false);
+                }
+                html += `<div class="bg-white border rounded-lg shadow-sm mb-4"><h3 class="text-sm font-bold text-purple-900 uppercase p-3 bg-purple-50 border-b text-center">${["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"][m]} de ${a}</h3><div class="p-3"><div class="grid grid-cols-7 gap-2">${g}</div></div></div>`;
+                mAt.setMonth(mAt.getMonth() + 1);
+            }
+            document.getElementById('empilhado-dias-calendario').innerHTML = html;
+        }
+
+        function renderizarViewListaCompleta(tId, turma) {
+            if(!turma || !turma.inicio || !turma.fim) return document.getElementById('lista-dias-calendario').innerHTML = '<div class="text-center text-gray-500 py-4">Defina o Início e Fim da turma.</div>';
+            let html = '', c = new Date(turma.inicio + 'T00:00:00'), f = new Date(turma.fim + 'T00:00:00');
+            while(c <= f) { html += gerarBlocoDia(c.getDate(), c.toISOString().split('T')[0], true, calendarioAulas[tId]?.[c.toISOString().split('T')[0]], true); c.setDate(c.getDate() + 1); }
+            document.getElementById('lista-dias-calendario').innerHTML = html;
+        }
+
+        // ================= EDIÇÃO MASTER =================
+        function popularDatasMaster() {
+            const tId = document.getElementById('master-turma').value; const sel = document.getElementById('master-data');
+            sel.innerHTML = '<option value="">Selecione a data...</option>'; document.getElementById('master-area-alunos').classList.add('hidden');
+            if(!tId) return;
+            let dias = Object.keys(calendarioAulas[tId] || {}).filter(k => k !== '_status' && (calendarioAulas[tId][k].status === 'agendada' || calendarioAulas[tId][k].status === 'remarcada')).sort();
+            if(dias.length === 0) sel.innerHTML = '<option value="">Nenhum dia agendado.</option>';
+            else dias.forEach(d => sel.innerHTML += `<option value="${d}">${formatData(d)}${calendarioAulas[tId][d].status === 'remarcada' ? ' (Remarcada)' : ''}</option>`);
+        }
+
+        function carregarDadosMaster() {
+            const tId = document.getElementById('master-turma').value, data = document.getElementById('master-data').value;
+            if(!tId || !data) return document.getElementById('master-area-alunos').classList.add('hidden');
+            masterFrequencias = JSON.parse(localStorage.getItem('estagio_frequencias')) || {};
+            masterAtividades = JSON.parse(localStorage.getItem('estagio_atividades')) || {};
+            if(!masterFrequencias[tId]) masterFrequencias[tId] = {}; if(!masterFrequencias[tId][data]) masterFrequencias[tId][data] = {};
+            if(!masterAtividades[tId]) masterAtividades[tId] = {}; if(!masterAtividades[tId][data]) masterAtividades[tId][data] = { colunas: [], notas: {} };
+            renderizarTabelaMaster(); document.getElementById('master-area-alunos').classList.remove('hidden');
+        }
+
+        function renderizarTabelaMaster() {
+            const tId = document.getElementById('master-turma').value, d = document.getElementById('master-data').value;
+            let cols = masterAtividades[tId][d].colunas || [], th = `<tr><th class="p-3 border bg-gray-50 text-left sticky left-0 z-10 text-orange-900 uppercase text-xs">Aluno</th><th class="p-3 border text-center text-xs">1ªH</th><th class="p-3 border text-center text-xs">2ªH</th><th class="p-3 border text-center text-xs">3ªH</th><th class="p-3 border text-center text-xs">4ªH</th><th class="p-3 border text-center text-xs">5ªH</th><th class="p-3 border text-center text-xs">6ªH</th>`;
+            cols.forEach(c => th += `<th class="p-3 border text-center text-purple-600 text-xs">${c.nome}</th>`); th += `</tr>`; document.getElementById('thead-master').innerHTML = th;
+            let aTurma = alunos.filter(a => a.turmaId === tId && a.status !== 'inativo').sort((a,b) => a.nome.localeCompare(b.nome));
+            let tb = aTurma.length===0 ? `<tr><td colspan="8" class="text-center p-6 text-gray-500">Nenhum aluno ativo.</td></tr>` : '';
+            aTurma.forEach(a => {
+                let f = masterFrequencias[tId][d][a.id] || ['','','','','',''];
+                tb += `<tr><td class="p-2 border font-bold text-sm whitespace-nowrap sticky left-0 bg-white z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">${a.nome}</td>`;
+                for(let i=0; i<6; i++) {
+                    let cls = f[i]==='P' ? "bg-green-100 text-green-700" : (f[i]==='F' ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-400");
+                    tb += `<td class="border p-1 bg-white text-center"><button onclick="togglePresencaMaster('${a.id}', ${i})" class="w-full py-2 rounded font-bold transition ${cls}">${f[i]||'-'}</button></td>`;
+                }
+                cols.forEach(c => tb += `<td class="border p-1 bg-white"><input type="text" value="${masterAtividades[tId][d].notas[a.id]?.[c.id]||''}" onchange="atualizarNotaMaster('${a.id}', '${c.id}', this.value)" class="w-full text-center p-2 border rounded font-bold text-gray-700 bg-gray-50 focus:bg-white outline-none"></td>`);
+                tb += `</tr>`;
+            });
+            document.getElementById('tbody-master').innerHTML = tb;
+        }
+
+        function togglePresencaMaster(aId, idx) {
+            const tId = document.getElementById('master-turma').value, d = document.getElementById('master-data').value;
+            if(!masterFrequencias[tId][d][aId]) masterFrequencias[tId][d][aId] = ['','','','','',''];
+            let at = masterFrequencias[tId][d][aId][idx], nv = at==='' ? 'P' : (at==='P' ? 'F' : '');
+            masterFrequencias[tId][d][aId][idx] = nv;
+            if(idx === 0) for(let i=1; i<6; i++) masterFrequencias[tId][d][aId][i] = nv;
+            renderizarTabelaMaster(); 
+        }
+
+        function atualizarNotaMaster(aId, cId, v) {
+            const tId = document.getElementById('master-turma').value, d = document.getElementById('master-data').value;
+            if(!masterAtividades[tId][d].notas[aId]) masterAtividades[tId][d].notas[aId] = {};
+            masterAtividades[tId][d].notas[aId][cId] = v;
+        }
+
+        function salvarDadosMaster() {
+            localStorage.setItem('estagio_frequencias', JSON.stringify(masterFrequencias));
+            localStorage.setItem('estagio_atividades', JSON.stringify(masterAtividades));
+            showNotification('Correção gravada com sucesso!'); updateDashboard();
+        }
+
+        // ================= CRUD =================
+        function abrirEditar(tipo, id) {
+            tipoEditando = tipo; idEditando = id;
+            let cont = document.getElementById('campos-editar'), obj; document.getElementById('titulo-editar').innerText = 'Editar';
+            if(tipo === 'prec') {
+                obj = preceptores.find(p => p.id === id);
+                cont.innerHTML = `<label class="block text-sm font-bold">Nome</label><input type="text" id="edit-nome" value="${obj.nome}" class="w-full p-2 border rounded mb-2" required><label class="block text-sm font-bold">Login</label><input type="text" id="edit-login" value="${obj.login}" class="w-full p-2 border rounded mb-2" required><label class="block text-sm font-bold">Nova Senha</label><input type="password" id="edit-senha" class="w-full p-2 border rounded">`;
+            } else if(tipo === 'turma') {
+                obj = turmas.find(t => t.id === id); let pOpts = ''; preceptores.forEach(p => pOpts += `<option value="${p.id}" ${p.id===obj.preceptorId?'selected':''}>${p.nome}</option>`);
+                cont.innerHTML = `<label class="block text-sm font-bold">Nome</label><input type="text" id="edit-nome" value="${obj.nome}" class="w-full p-2 border rounded mb-2" required><label class="block text-sm font-bold">Preceptor</label><select id="edit-prec" class="w-full p-2 border rounded" required>${pOpts}</select>`;
+            } else if(tipo === 'aluno') {
+                obj = alunos.find(a => a.id === id); let tOpts = ''; turmas.forEach(t => tOpts += `<option value="${t.id}" ${t.id===obj.turmaId?'selected':''}>${t.nome}</option>`);
+                cont.innerHTML = `<label class="block text-sm font-bold">Nome</label><input type="text" id="edit-nome" value="${obj.nome}" class="w-full p-2 border rounded mb-2" required><label class="block text-sm font-bold">Turma</label><select id="edit-turma" class="w-full p-2 border rounded mb-2" required>${tOpts}</select><label class="block text-sm font-bold">Status</label><select id="edit-status" class="w-full p-2 border rounded" required><option value="ativo" ${obj.status!=='inativo'?'selected':''}>Ativo</option><option value="inativo" ${obj.status==='inativo'?'selected':''}>Inativo</option></select>`;
+            }
+            document.getElementById('modal-editar').classList.remove('hidden');
+        }
+
+        function salvarEdicao() {
+            if(tipoEditando === 'prec') {
+                let obj = preceptores.find(p => p.id === idEditando); obj.nome = document.getElementById('edit-nome').value; obj.login = document.getElementById('edit-login').value;
+                if(document.getElementById('edit-senha').value) obj.senha = document.getElementById('edit-senha').value; localStorage.setItem('estagio_preceptores', JSON.stringify(preceptores));
+            } else if(tipoEditando === 'turma') {
+                let obj = turmas.find(t => t.id === idEditando); obj.nome = document.getElementById('edit-nome').value; obj.preceptorId = document.getElementById('edit-prec').value; localStorage.setItem('estagio_turmas', JSON.stringify(turmas));
+            } else if(tipoEditando === 'aluno') {
+                let obj = alunos.find(a => a.id === idEditando); obj.nome = document.getElementById('edit-nome').value; obj.turmaId = document.getElementById('edit-turma').value; obj.status = document.getElementById('edit-status').value; localStorage.setItem('estagio_alunos', JSON.stringify(alunos));
+            }
+            init(); fecharModalEditar(); showNotification('Salvo!');
+        }
+        function fecharModalEditar() { document.getElementById('modal-editar').classList.add('hidden'); }
+
+        function savePreceptor() {
+            preceptores.push({ id: Date.now().toString(), nome: document.getElementById('prec-nome').value, login: document.getElementById('prec-login').value, senha: document.getElementById('prec-senha').value });
+            localStorage.setItem('estagio_preceptores', JSON.stringify(preceptores)); document.getElementById('form-preceptor').reset(); init(); showNotification('Preceptor Cadastrado!');
+        }
+        function renderPreceptores() {
+            document.getElementById('list-preceptores').innerHTML = preceptores.map(p => `<tr class="hover:bg-gray-50 transition"><td class="p-4 font-bold">${p.nome}</td><td class="p-4">${p.login}</td><td class="p-4 text-right"><button onclick="abrirEditar('prec', '${p.id}')" class="text-orange-500 mx-2"><i class="fas fa-edit"></i></button><button onclick="deletar('prec', '${p.id}')" class="text-red-500"><i class="fas fa-trash"></i></button></td></tr>`).join('') || '<tr><td colspan="3" class="p-4 text-center">Nenhum cadastrado</td></tr>';
+        }
+
+        function saveTurma() {
+            turmas.push({ id: Date.now().toString(), nome: document.getElementById('turma-nome').value, preceptorId: document.getElementById('turma-preceptor').value, turno: document.getElementById('turma-turno').value, inicio: document.getElementById('turma-inicio').value, fim: document.getElementById('turma-fim').value, status: 'ativa' });
+            localStorage.setItem('estagio_turmas', JSON.stringify(turmas)); document.getElementById('form-turma').reset(); init(); showNotification('Turma Cadastrada!');
+        }
+        function renderTurmas() {
+            let term = (document.getElementById('search-turma')?.value || '').toLowerCase(); let atv = '', fin = '';
+            turmas.forEach(t => {
+                let p = preceptores.find(pr => pr.id === t.preceptorId);
+                let row = `<tr class="hover:bg-gray-50"><td class="p-4 font-bold">${t.nome} <br><span class="text-xs text-purple-600">${t.turno||'-'}</span></td><td class="p-4 text-xs">${formatData(t.inicio)} a ${formatData(t.fim)}</td><td class="p-4">${p?p.nome:'-'}</td><td class="p-4 text-right"><button onclick="abrirRelatorioTurma('${t.id}')" class="text-purple-600 mx-1"><i class="fas fa-list"></i></button><button onclick="abrirEditar('turma', '${t.id}')" class="text-orange-500 mx-1"><i class="fas fa-edit"></i></button>${t.status !== 'finalizada' ? `<button onclick="altTurma('${t.id}', 'finalizada')" class="text-gray-500 mx-1"><i class="fas fa-flag-checkered"></i></button>` : `<button onclick="altTurma('${t.id}', 'ativa')" class="text-green-500 mx-1"><i class="fas fa-undo"></i></button>`}<button onclick="deletar('turma', '${t.id}')" class="text-red-500 mx-1"><i class="fas fa-trash"></i></button></td></tr>`;
+                if(t.nome.toLowerCase().includes(term)) { if(t.status === 'finalizada') fin += row; else atv += row; }
+            });
+            document.getElementById('list-turmas').innerHTML = atv || '<tr><td colspan="4" class="p-4 text-center">Nenhuma turma ativa</td></tr>'; 
+            document.getElementById('list-turmas-finalizadas').innerHTML = fin || '<tr><td colspan="4" class="p-4 text-center">Nenhuma finalizada</td></tr>';
+        }
+        function altTurma(id, st) { turmas.find(t => t.id === id).status = st; localStorage.setItem('estagio_turmas', JSON.stringify(turmas)); init(); }
+
+        function saveAluno() {
+            alunos.push({ id: Date.now().toString(), nome: document.getElementById('aluno-nome').value, turmaId: document.getElementById('aluno-turma').value, status: 'ativo' });
+            localStorage.setItem('estagio_alunos', JSON.stringify(alunos)); document.getElementById('form-aluno').reset(); init(); showNotification('Aluno Cadastrado!');
+        }
+
+        function mudarPagina(page) {
+            let term = (document.getElementById('search-aluno')?.value || '').toLowerCase(); let turno = document.getElementById('filter-turno')?.value || '';
+            let f = alunos.filter(a => { let t = turmas.find(tr => tr.id === a.turmaId); return (a.nome.toLowerCase().includes(term) || (t && t.nome.toLowerCase().includes(term))) && (turno ? (t && t.turno === turno) : true); });
+            const m = Math.ceil(f.length / itemsPerPage) || 1; if(page < 1) page = 1; if(page > m) page = m; currentPage = page; let s = (currentPage - 1) * itemsPerPage;
+            document.getElementById('list-alunos').innerHTML = f.slice(s, s + itemsPerPage).map(a => {
+                let t = turmas.find(tr => tr.id === a.turmaId); let bs = a.status === 'inativo' ? '<span class="bg-red-100 text-red-700 px-2 py-1 rounded text-[10px] ml-2">INATIVO</span>' : '<span class="bg-green-100 text-green-700 px-2 py-1 rounded text-[10px] ml-2">ATIVO</span>';
+                return `<tr class="hover:bg-gray-50"><td class="p-4 font-bold">${a.nome} ${bs}</td><td class="p-4">${t?t.nome:'-'}</td><td class="p-4 text-right"><button onclick="abrirRelatorioAluno('${a.id}')" class="text-purple-600 mx-2"><i class="fas fa-chart-bar"></i></button><button onclick="abrirEditar('aluno', '${a.id}')" class="text-orange-500 mx-2"><i class="fas fa-edit"></i></button><button onclick="deletar('aluno', '${a.id}')" class="text-red-500"><i class="fas fa-trash"></i></button></td></tr>`;
+            }).join('') || '<tr><td colspan="3" class="p-4 text-center">Nenhum aluno</td></tr>';
+            document.getElementById('page-info').innerText = `Mostrando ${f.length===0?0:s+1} a ${Math.min(s+itemsPerPage, f.length)} de ${f.length}`;
+        }
+
+        function importarCSV() {
+            const tId = document.getElementById('import-turma').value; const file = document.getElementById('file-csv').files[0];
+            if(!tId || !file) return alert('Selecione turma e arquivo!');
+            const r = new FileReader();
+            r.onload = function(e) { e.target.result.split('\n').map(l => l.trim()).filter(l => l.length > 0).forEach(nome => alunos.push({ id: Date.now().toString()+Math.random().toString().slice(2,6), nome, turmaId: tId, status: 'ativo' }));
+                localStorage.setItem('estagio_alunos', JSON.stringify(alunos)); init(); document.getElementById('file-csv').value = ''; alert(`Alunos importados!`);
+            }; r.readAsText(file);
+        }
+
+        // ================= RELATÓRIOS E DASHBOARD =================
+        function calcularFrequenciaAluno(aId) {
+            let freqs = JSON.parse(localStorage.getItem('estagio_frequencias')) || {}; let pos = 0, pres = 0, fts = 0;
+            Object.keys(freqs).forEach(tId => Object.values(freqs[tId]).forEach(dia => { let r = dia[aId]; if(r && r.some(v => v === 'P' || v === 'F')) { pos += 6; pres += r.filter(v => v === 'P').length; fts += r.filter(v => v === 'F').length; } }));
+            return { pos, pres, faltas: fts, percent: pos > 0 ? ((pres/pos)*100).toFixed(1) : 0 };
+        }
+        function calcularNotasAluno(aId, tId) {
+            let atv = JSON.parse(localStorage.getItem('estagio_atividades')) || {}; let tot = 0, hist = [];
+            if(atv[tId]) Object.keys(atv[tId]).forEach(d => {
+                if(atv[tId][d].notas && atv[tId][d].notas[aId]) atv[tId][d].colunas.forEach(c => {
+                    let v = parseFloat(String(atv[tId][d].notas[aId][c.id]).replace(',', '.')); if(!isNaN(v)) { tot += v; hist.push({ data: d, atividade: c.nome, nota: v }); }
+                });
+            }); return { total: tot, historico: hist };
+        }
+
+        function updateDashboard() {
+            document.getElementById('dash-preceptores').innerText = preceptores.length; document.getElementById('dash-turmas').innerText = turmas.length; document.getElementById('dash-alunos').innerText = alunos.filter(a => a.status !== 'inativo').length;
+            let labels = [], dados = [], cores = [], htmlR = ''; let rsc = alunos.filter(a => a.status !== 'inativo').map(a => ({...a, f: calcularFrequenciaAluno(a.id).faltas})).filter(a => a.f >= 18).sort((a,b) => b.f - a.f);
+            rsc.forEach(a => { let t = turmas.find(tr => tr.id === a.turmaId); htmlR += `<li class="py-2 flex justify-between items-center"><div class="flex flex-col"><span class="font-bold ${a.f>=30?'text-red-700':'text-orange-600'}">${a.nome}</span><span class="text-[10px] text-gray-500">${t?t.nome:'-'}</span></div> <span class="${a.f>=30?'bg-red-600':'bg-orange-500'} text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm">${a.f>=30?'ESTOUROU':'RISCO'} (${a.f}h)</span></li>`; });
+            document.getElementById('lista-risco').innerHTML = htmlR || '<li class="py-4 text-gray-500 text-center text-xs">Nenhum aluno em risco.</li>';
+            turmas.forEach(t => { let pT=0, prT=0; alunos.filter(a => a.turmaId === t.id && a.status !== 'inativo').forEach(a => { let f = calcularFrequenciaAluno(a.id); pT += f.pos; prT += f.pres; }); let p = pT > 0 ? ((prT/pT)*100).toFixed(1) : 0; labels.push(t.nome); dados.push(p); cores.push(pT===0 ? '#E5E7EB' : (p >= 75 ? 'rgba(88, 28, 135, 0.8)' : 'rgba(249, 115, 22, 0.8)')); });
+            if(chartInstance) chartInstance.destroy(); chartInstance = new Chart(document.getElementById('graficoFrequencia').getContext('2d'), { type: 'bar', data: { labels, datasets: [{ data: dados, backgroundColor: cores }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { max: 100 } }, plugins: { legend: { display: false } } } });
+        }
+
+        function abrirRelatorioAluno(id) {
+            let a = alunos.find(x => x.id === id), t = turmas.find(x => x.id === a.turmaId), fC = calcularFrequenciaAluno(id), nC = calcularNotasAluno(id, a.turmaId);
+            document.getElementById('modal-titulo').innerText = "Boletim de Estágio";
+            let f = JSON.parse(localStorage.getItem('estagio_frequencias')) || {}, obsDb = JSON.parse(localStorage.getItem('estagio_observacoes')) || {}, fa = [];
+            Object.keys(f).forEach(tId => Object.keys(f[tId]).forEach(d => { let hr = f[tId][d][id]; if(hr && hr.some(v => v !== '')) fa.push({ d, p: hr, obs: obsDb[tId]?.[d]?.[id]||'' }); }));
+            let tbF = fa.sort((a,b)=>new Date(a.d)-new Date(b.d)).map(x => `<tr class="border-b"><td class="p-2 whitespace-nowrap">${formatData(x.d)}</td><td class="p-2 text-center text-xs font-bold">${x.p[0]}</td><td class="p-2 text-center text-xs font-bold">${x.p[1]}</td><td class="p-2 text-center text-xs font-bold">${x.p[2]}</td><td class="p-2 text-center text-xs font-bold">${x.p[3]}</td><td class="p-2 text-center text-xs font-bold">${x.p[4]}</td><td class="p-2 text-center text-xs font-bold">${x.p[5]}</td><td class="p-2 text-xs italic">${x.obs}</td></tr>`).join('');
+            let tbN = nC.historico.map(n => `<tr class="border-b"><td class="p-2">${formatData(n.data)}</td><td class="p-2">${n.atividade}</td><td class="p-2 font-bold text-blue-700 text-right">${n.nota.toFixed(1)}</td></tr>`).join('');
+            document.getElementById('modal-conteudo').innerHTML = `<h2 class="text-2xl font-bold text-purple-900">${a.nome}</h2><p class="mb-4 text-sm">Turma: ${t?t.nome:'-'}</p><div class="grid grid-cols-4 gap-4 mb-6"><div class="bg-blue-50 border p-4 rounded text-center"><span class="text-sm font-bold">Pontuação</span><div class="text-3xl font-black">${nC.total.toFixed(1)}</div></div><div class="bg-purple-50 border p-4 rounded text-center"><span class="text-sm font-bold">Frequência</span><div class="text-3xl font-black">${fC.percent}%</div></div><div class="bg-green-50 border p-4 rounded text-center"><span class="text-sm font-bold">Presenças</span><div class="text-3xl font-black">${fC.pres}h</div></div><div class="${fC.faltas>=30?'bg-red-100 text-red-800':'bg-white'} border p-4 rounded text-center"><span class="text-sm font-bold">Faltas</span><div class="text-3xl font-black">${fC.faltas}h</div></div></div><h4 class="font-bold border-b pb-2 mb-2">Notas</h4><table class="w-full text-sm border mb-6"><thead class="bg-gray-100"><tr><th class="p-2 text-left">Data</th><th class="p-2 text-left">Atividade</th><th class="p-2 text-right">Nota</th></tr></thead><tbody>${tbN||'<tr><td colspan="3" class="text-center p-4">Sem notas</td></tr>'}</tbody></table><h4 class="font-bold border-b pb-2 mb-2">Presenças</h4><table class="w-full text-sm border"><thead class="bg-gray-100"><tr><th class="p-2 text-left">Data</th><th colspan="6" class="p-2">Horas</th><th class="p-2 text-left">Observação</th></tr></thead><tbody>${tbF||'<tr><td colspan="8" class="text-center p-4">Sem registos</td></tr>'}</tbody></table>`;
+            document.getElementById('modal-container').classList.replace('hidden', 'flex');
+        }
+
+        function abrirRelatorioTurma(id) {
+            let t = turmas.find(x => x.id === id); document.getElementById('modal-titulo').innerText = "Desempenho: " + t.nome;
+            let tb = alunos.filter(a => a.turmaId === id).sort((a,b)=>a.nome.localeCompare(b.nome)).map(a => { let fC = calcularFrequenciaAluno(a.id), nC = calcularNotasAluno(a.id, id); return `<tr><td class="p-3 border font-medium">${a.nome}${a.status==='inativo'?' <span class="bg-red-100 text-[10px] px-1 rounded text-red-700">INATIVO</span>':''}</td><td class="p-3 border text-center font-bold text-blue-700">${nC.total.toFixed(1)}</td><td class="p-3 border text-center font-bold">${fC.percent}%</td><td class="p-3 border text-center">${fC.pres}h</td><td class="p-3 border text-center ${fC.faltas>=30?'text-red-600':''}">${fC.faltas}h</td></tr>`; }).join('');
+            document.getElementById('modal-conteudo').innerHTML = `<h2 class="text-2xl font-bold mb-6">${t.nome}</h2><table class="w-full text-sm text-left border"><thead class="bg-purple-50 text-purple-900"><tr><th class="p-3 border">Aluno</th><th class="p-3 border text-center">Pontos</th><th class="p-3 border text-center">Freq.</th><th class="p-3 border text-center">Presenças</th><th class="p-3 border text-center">Faltas</th></tr></thead><tbody>${tb||'<tr><td colspan="5" class="text-center p-4">Sem alunos</td></tr>'}</tbody></table>`; document.getElementById('modal-container').classList.replace('hidden', 'flex');
+        }
+
+        function exportarBackupXLSX() {
+            if (typeof XLSX === 'undefined') return alert('Erro ao carregar Excel.');
+            let freqs = JSON.parse(localStorage.getItem('estagio_frequencias')) || {}, bk = [];
+            Object.keys(freqs).forEach(tId => Object.keys(freqs[tId]).forEach(d => Object.keys(freqs[tId][d]).forEach(aId => {
+                let f = freqs[tId][d][aId]; if(f && f.some(v => v==='P'||v==='F')) bk.push({"Turma": turmas.find(t=>t.id===tId)?.nome||"?", "Data": formatData(d), "Aluno": alunos.find(a=>a.id===aId)?.nome||"?", "1h": f[0]||'-', "2h": f[1]||'-', "3h": f[2]||'-', "4h": f[3]||'-', "5h": f[4]||'-', "6h": f[5]||'-'});
+            })));
+            if(bk.length === 0) return alert('Sem dados.'); let wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bk), "Backup"); XLSX.writeFile(wb, `Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+        }
+
+        function carregarGaleria() {
+            let g = JSON.parse(localStorage.getItem('estagio_galeria')) || [], gr = document.getElementById('grid-galeria');
+            gr.innerHTML = g.length===0 ? '<div class="col-span-full text-center text-gray-500 py-10"><p>Nenhuma foto.</p></div>' : g.sort((a,b)=>new Date(b.data)-new Date(a.data)).map(f => { let t = turmas.find(x => x.id === f.turmaId); return `<div class="bg-white rounded-lg shadow border flex flex-col"><img src="${f.imagem}" class="w-full h-48 object-cover border-b"><div class="p-4 flex-1 flex flex-col"><p class="font-bold text-sm mb-2">${f.descricao}</p><div class="text-xs text-gray-500">${t?t.nome:'Geral'}</div><button onclick="apagarFoto('${f.id}')" class="mt-4 text-red-500 border border-red-200 rounded py-1.5 hover:bg-red-500 hover:text-white transition">Apagar</button></div></div>`; }).join('');
+        }
+        function apagarFoto(id) { if(confirm('Excluir?')) { let g = JSON.parse(localStorage.getItem('estagio_galeria')) || []; localStorage.setItem('estagio_galeria', JSON.stringify(g.filter(f => f.id !== id))); carregarGaleria(); } }
+        function formatData(d) { if(!d) return ''; let p = d.split('-'); return p.length===3 ? `${p[2]}/${p[1]}/${p[0]}` : d; }
+        function deletar(tipo, id) { if(confirm("Excluir item permanentemente?")) { if(tipo==='aluno') alunos=alunos.filter(x=>x.id!==id); if(tipo==='turma') turmas=turmas.filter(x=>x.id!==id); if(tipo==='prec') preceptores=preceptores.filter(x=>x.id!==id); localStorage.setItem('estagio_'+tipo+'s', JSON.stringify(tipo==='aluno'?alunos:(tipo==='turma'?turmas:preceptores))); init(); showNotification('Excluído!'); } }
+
+        init();
+    </script>
+</body>
+</html>
