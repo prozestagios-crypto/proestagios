@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App do Preceptor - Relacional</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+
+    <div id="loading-inicial" class="fixed inset-0 z-[9999] bg-purple-900 flex flex-col items-center justify-center">
+        <i class="fas fa-circle-notch fa-spin text-orange-500 text-6xl mb-4"></i>
+        <h2 class="text-white text-2xl font-bold mb-2">Conectando ao Supabase...</h2>
+    </div>
+
+    <div id="notification" class="fixed top-4 right-4 z-50 transform transition-transform duration-300 translate-x-full">
+        <div id="notification-bg" class="bg-green-500 text-white px-6 py-3 rounded shadow-lg flex items-center gap-2">
+            <span id="notification-msg">Sucesso!</span>
+        </div>
+    </div>
+
+    <!-- TELA DE LOGIN -->
+    <div id="screen-login" class="hidden h-screen items-center justify-center px-4 bg-purple-900">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div class="bg-purple-900 w-full flex justify-center py-6 border-b border-purple-800">
+                <img src="logo.png" alt="Logo" class="h-16 object-contain" onerror="this.src='https://via.placeholder.com/200x60/581c87/ffffff?text=LOGO.PNG'">
+            </div>
+            <div class="p-8">
+                <div class="text-center mb-8">
+                    <h1 class="text-2xl font-bold text-gray-800">Portal do Preceptor</h1>
+                    <p class="text-sm text-gray-500">Faça login para continuar</p>
+                </div>
+                <form onsubmit="event.preventDefault(); fazerLogin();" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Usuário</label>
+                        <input type="text" id="login-user" required class="w-full p-3 border rounded outline-none bg-gray-50 focus:ring-2 focus:ring-purple-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-700 mb-1">Senha</label>
+                        <input type="password" id="login-pass" required class="w-full p-3 border rounded outline-none bg-gray-50 focus:ring-2 focus:ring-purple-500">
+                    </div>
+                    <button type="submit" class="w-full bg-orange-500 text-white p-3 rounded font-bold shadow-md hover:bg-orange-600 transition">Entrar</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- TELA PRINCIPAL -->
+    <div id="screen-app" class="hidden h-screen flex-col">
+        <header class="bg-purple-900 text-white p-4 shadow-md flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <img src="logo.png" alt="Logo" class="h-8 object-contain" onerror="this.style.display='none'">
+                <div>
+                    <h1 class="font-bold text-lg leading-tight">Área do Preceptor</h1>
+                    <p class="text-xs text-purple-200" id="user-name">Bem-vindo</p>
+                </div>
+            </div>
+            <button onclick="logout()" class="text-purple-200 hover:text-white transition">
+                <i class="fas fa-sign-out-alt text-xl"></i> Sair
+            </button>
+        </header>
+
+        <div class="bg-white border-b flex text-center">
+            <button onclick="switchAppTab('gestao')" id="tab-btn-gestao" class="flex-1 py-3 text-purple-700 border-b-2 border-purple-700 font-bold transition">
+                <i class="fas fa-clipboard-list mr-1"></i> Gestão
+            </button>
+            <button onclick="switchAppTab('galeria')" id="tab-btn-galeria" class="flex-1 py-3 text-gray-500 font-semibold transition">
+                <i class="fas fa-camera mr-1"></i> Galeria (Storage)
+            </button>
+        </div>
+
+        <main class="flex-1 overflow-y-auto p-4 max-w-5xl mx-auto w-full">
+            <div id="app-tab-gestao" class="block space-y-4">
+                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <label class="block text-sm font-bold text-purple-900 mb-1">Selecione a Turma</label>
+                    <select id="select-turma" onchange="popularDatas(); carregarDadosTurma();" class="w-full p-3 border rounded outline-none bg-gray-50 font-medium"></select>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                    <label class="block text-sm font-bold text-purple-900 mb-1">Data da Aula</label>
+                    <select id="data-aula" onchange="carregarDadosTurma()" class="w-full p-3 border rounded outline-none bg-gray-50 font-medium">
+                        <option value="">Selecione a turma primeiro...</option>
+                    </select>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hidden" id="area-alunos">
+                    <div class="p-4 border-b flex justify-between items-center bg-purple-50">
+                        <h3 class="font-bold text-purple-900">Lista de Alunos</h3>
+                        <button onclick="abrirModalAtividade()" class="bg-purple-700 text-white px-3 py-1.5 text-sm rounded font-bold hover:bg-purple-800 shadow transition flex items-center gap-1">
+                            <i class="fas fa-plus"></i> Atividade
+                        </button>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-gray-50 text-gray-700 border-b" id="thead-alunos"></thead>
+                            <tbody id="tbody-alunos" class="divide-y"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="app-tab-galeria" class="hidden space-y-4">
+                <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                    <h3 class="font-bold text-purple-900 mb-4 text-lg border-b pb-2">Adicionar Foto (Supabase Storage)</h3>
+                    <form onsubmit="event.preventDefault(); salvarFotoStorage();" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Turma</label>
+                            <select id="foto-turma" class="w-full p-3 border rounded outline-none bg-gray-50"></select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Descrição / Evento</label>
+                            <input type="text" id="foto-desc" required placeholder="Ex: Aula prática" class="w-full p-3 border rounded outline-none bg-gray-50">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">Foto</label>
+                            <input type="file" id="foto-file" accept="image/*" capture="environment" required class="w-full p-2 border rounded text-sm bg-gray-50">
+                        </div>
+                        <button type="submit" id="btn-envia-foto" class="w-full bg-orange-500 text-white p-3 rounded font-bold shadow-md hover:bg-orange-600 transition mt-4">
+                            Enviar para o Storage
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL ATIVIDADE -->
+    <div id="modal-atividade" class="fixed inset-0 bg-black bg-opacity-60 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-lg p-6 w-full max-w-sm shadow-2xl">
+            <h3 class="font-bold text-lg mb-4 text-purple-900 border-b pb-2">Nova Coluna de Nota</h3>
+            <input type="text" id="nome-atividade" placeholder="Ex: Prova Prática" class="w-full p-3 border rounded mb-4 outline-none bg-gray-50">
+            <div class="flex justify-end gap-2">
+                <button onclick="fecharModalAtividade()" class="px-4 py-2 text-gray-600 bg-gray-200 rounded font-bold">Cancelar</button>
+                <button onclick="adicionarColunaAtividade()" class="px-4 py-2 text-white bg-purple-700 rounded font-bold">Criar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPT DO APP RELACIONAL COMPLETO -->
+    <script>
+        const SUPABASE_URL = 'https://errnktrvgcjhstlswobi.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVycm5rdHJ2Z2NqaHN0bHN3b2JpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0OTA3NzcsImV4cCI6MjEwNzA2Njc3N30.eO7GqXBC9yr9xsHPOA-lJtW-jO3NRkGiBZO-_BGHiYw';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let preceptorLogado = null;
+        let db = { preceptores: [], turmas: [], alunos: [], frequencias: {}, atividades: {}, calendario: {} };
+        let colunasAtuais = [];
+
+        window.onload = async () => {
+            await carregarDadosApp();
+            let s = localStorage.getItem('proz_preceptor_rel');
+            if(s) {
+                let p = db.preceptores.find(x => x.id === JSON.parse(s).id);
+                if(p) { preceptorLogado = p; iniciarInterface(); } else mostrarLogin();
+            } else mostrarLogin();
+            document.getElementById('loading-inicial').classList.add('hidden');
+        };
+
+        async function carregarDadosApp() {
+            const [pRes, tRes, aRes, fRes, atRes, cRes] = await Promise.all([
+                supabaseClient.from('preceptores').select('*'),
+                supabaseClient.from('turmas').select('*'),
+                supabaseClient.from('alunos').select('*'),
+                supabaseClient.from('frequencias').select('*'),
+                supabaseClient.from('atividades').select('*'),
+                supabaseClient.from('calendario').select('*')
+            ]);
+
+            db.preceptores = pRes.data || [];
+            db.turmas = tRes.data || [];
+            db.alunos = aRes.data || [];
+
+            db.frequencias = {};
+            (fRes.data || []).forEach(item => {
+                if(!db.frequencias[item.turma_id]) db.frequencias[item.turma_id] = {};
+                if(!db.frequencias[item.turma_id][item.data]) db.frequencias[item.turma_id][item.data] = {};
+                db.frequencias[item.turma_id][item.data][item.aluno_id] = item.horas;
+            });
+
+            db.atividades = {};
+            (atRes.data || []).forEach(item => {
+                if(!db.atividades[item.turma_id]) db.atividades[item.turma_id] = {};
+                db.atividades[item.turma_id][item.data] = { colunas: item.colunas || [], notas: item.notas || {} };
+            });
+
+            db.calendario = {};
+            (cRes.data || []).forEach(item => {
+                db.calendario[item.turma_id] = item.dados || {};
+            });
+        }
+
+        function showNotification(msg, isError = false) {
+            const notif = document.getElementById('notification');
+            const bg = document.getElementById('notification-bg');
+            bg.className = `${isError ? 'bg-red-500' : 'bg-green-500'} text-white px-6 py-3 rounded shadow-lg flex items-center gap-2 font-bold`;
+            document.getElementById('notification-msg').innerText = msg;
+            notif.classList.remove('translate-x-full');
+            setTimeout(() => notif.classList.add('translate-x-full'), 3000);
+        }
+
+        function mostrarLogin() { document.getElementById('screen-login').classList.replace('hidden', 'flex'); document.getElementById('screen-app').classList.replace('flex', 'hidden'); }
+        
+        async function fazerLogin() {
+            let u = document.getElementById('login-user').value.trim(); 
+            let p = document.getElementById('login-pass').value.trim();
+            
+            // Atualiza os dados da nuvem antes de validar para aceitar preceptores criados recentemente no Admin
+            let { data: preceptoresNuvem, error } = await supabaseClient.from('preceptores').select('*');
+            if (error || !preceptoresNuvem) {
+                showNotification('Erro ao conectar com a nuvem!', true);
+                return;
+            }
+            db.preceptores = preceptoresNuvem;
+
+            let prec = db.preceptores.find(x => x.login === u && x.senha === p);
+            if(prec) { 
+                preceptorLogado = prec; 
+                localStorage.setItem('proz_preceptor_rel', JSON.stringify(prec)); 
+                iniciarInterface(); 
+            } else { 
+                showNotification('Usuário ou senha inválidos!', true); 
+            }
+        }
+
+        function logout() { preceptorLogado = null; localStorage.removeItem('proz_preceptor_rel'); mostrarLogin(); }
+
+        function iniciarInterface() {
+            document.getElementById('user-name').innerText = `Preceptor(a): ${preceptorLogado.nome}`;
+            document.getElementById('screen-login').classList.replace('flex', 'hidden');
+            document.getElementById('screen-app').classList.replace('hidden', 'flex');
+            carregarTurmasPreceptor();
+        }
+
+        function switchAppTab(tab) {
+            document.getElementById('app-tab-gestao').classList.replace('block', 'hidden');
+            document.getElementById('app-tab-galeria').classList.replace('block', 'hidden');
+            document.getElementById(`app-tab-${tab}`).classList.replace('hidden', 'block');
+            document.getElementById('tab-btn-gestao').className = "flex-1 py-3 font-semibold text-gray-500 transition";
+            document.getElementById('tab-btn-galeria').className = "flex-1 py-3 font-semibold text-gray-500 transition";
+            document.getElementById(`tab-btn-${tab}`).className = "flex-1 py-3 text-purple-700 border-b-2 border-purple-700 font-bold transition";
+        }
+
+        function carregarTurmasPreceptor() {
+            let minhas = db.turmas.filter(t => t.preceptor_id === preceptorLogado.id && t.status !== 'finalizada');
+            let selT = document.getElementById('select-turma'), selF = document.getElementById('foto-turma');
+            let opts = '<option value="">Selecione a turma...</option>';
+            minhas.forEach(t => opts += `<option value="${t.id}">${t.nome}</option>`);
+            selT.innerHTML = opts; selF.innerHTML = opts;
+        }
+
+        function popularDatas() {
+            let tId = document.getElementById('select-turma').value, selD = document.getElementById('data-aula');
+            selD.innerHTML = '<option value="">Selecione a data...</option>';
+            if(!tId) return;
+            let cal = db.calendario[tId] || {}, dias = [];
+            Object.keys(cal).forEach(k => { if(k !== '_status' && ['agendada','remarcada'].includes(cal[k].status)) dias.push(k); });
+            dias.sort().forEach(d => {
+                let p = d.split('-');
+                selD.innerHTML += `<option value="${d}">${p[2]}/${p[1]}/${p[0]}</option>`;
+            });
+            carregarDadosTurma();
+        }
+
+        function carregarDadosTurma() {
+            let tId = document.getElementById('select-turma').value, d = document.getElementById('data-aula').value, area = document.getElementById('area-alunos');
+            if(!tId || !d) { area.classList.add('hidden'); return; }
+            if(!db.frequencias[tId]) db.frequencias[tId] = {};
+            if(!db.frequencias[tId][d]) db.frequencias[tId][d] = {};
+            if(!db.atividades[tId]) db.atividades[tId] = {};
+            if(!db.atividades[tId][d]) db.atividades[tId][d] = { colunas: [], notas: {} };
+            colunasAtuais = db.atividades[tId][d].colunas || [];
+            renderizarTabelaApp();
+            area.classList.remove('hidden');
+        }
+
+        function renderizarTabelaApp() {
+            let tId = document.getElementById('select-turma').value, d = document.getElementById('data-aula').value;
+            let alunosT = db.alunos.filter(a => a.turma_id === tId).sort((a,b)=>a.nome.localeCompare(b.nome));
+            let freq = db.frequencias[tId][d], notas = db.atividades[tId][d].notas;
+
+            let th = `<tr><th class="p-3 border bg-gray-50">Aluno</th>`;
+            for(let i=1; i<=6; i++) th += `<th class="p-3 border text-center text-xs">${i}ªH</th>`;
+            colunasAtuais.forEach(c => th += `<th class="p-3 border text-center text-orange-600 text-xs">${c.nome}</th>`);
+            th += `</tr>`;
+            document.getElementById('thead-alunos').innerHTML = th;
+
+            let tb = '';
+            alunosT.forEach(a => {
+                let f = freq[a.id] || ['','','','','',''];
+                tb += `<tr><td class="p-2 border font-bold text-sm bg-white">${a.nome}</td>`;
+                for(let i=0; i<6; i++) {
+                    let cls = f[i]==='P'?"bg-green-100 text-green-700":(f[i]==='F'?"bg-red-100 text-red-700":"bg-gray-100 text-gray-400");
+                    tb += `<td class="border p-1 text-center"><button onclick="togglePresencaApp('${a.id}', ${i})" class="w-full py-2 rounded font-bold border ${cls}">${f[i]||'-'}</button></td>`;
+                }
+                colunasAtuais.forEach(c => {
+                    let val = notas[a.id]?.[c.id] || '';
+                    tb += `<td class="border p-1"><input type="text" value="${val}" onchange="atualizarNotaApp('${a.id}', '${c.id}', this.value)" class="w-full text-center p-2 border rounded font-bold outline-none bg-gray-50"></td>`;
+                });
+                tb += `</tr>`;
+            });
+            document.getElementById('tbody-alunos').innerHTML = tb;
+        }
+
+        async function togglePresencaApp(aId, idx) {
+            let tId = document.getElementById('select-turma').value, d = document.getElementById('data-aula').value;
+            if(!db.frequencias[tId][d][aId]) db.frequencias[tId][d][aId] = ['','','','','',''];
+            let atual = db.frequencias[tId][d][aId][idx], nv = atual===''?'P':(atual==='P'?'F':'');
+            db.frequencias[tId][d][aId][idx] = nv;
+            if(idx===0) for(let i=1;i<6;i++) db.frequencias[tId][d][aId][i] = nv;
+            
+            renderizarTabelaApp();
+            await supabaseClient.from('frequencias').upsert({ turma_id: tId, data: d, aluno_id: aId, horas: db.frequencias[tId][d][aId] }, { onConflict: 'turma_id,data,aluno_id' });
+            showNotification('Presença salva!');
+        }
+
+        async function atualizarNotaApp(aId, cId, val) {
+            let tId = document.getElementById('select-turma').value, d = document.getElementById('data-aula').value;
+            if(!db.atividades[tId][d].notas[aId]) db.atividades[tId][d].notas[aId] = {};
+            db.atividades[tId][d].notas[aId][cId] = val;
+            
+            await supabaseClient.from('atividades').upsert({ turma_id: tId, data: d, colunas: db.atividades[tId][d].colunas, notas: db.atividades[tId][d].notas }, { onConflict: 'turma_id,data' });
+            showNotification('Nota salva!');
+        }
+
+        function abrirModalAtividade() { document.getElementById('modal-atividade').classList.replace('hidden', 'flex'); document.getElementById('nome-atividade').value = ''; }
+        function fecharModalAtividade() { document.getElementById('modal-atividade').classList.replace('flex', 'hidden'); }
+
+        async function adicionarColunaAtividade() {
+            let nome = document.getElementById('nome-atividade').value.trim();
+            if(!nome) return;
+            let tId = document.getElementById('select-turma').value, d = document.getElementById('data-aula').value;
+            db.atividades[tId][d].colunas.push({ id: 'col_' + Date.now(), nome });
+            colunasAtuais = db.atividades[tId][d].colunas;
+            
+            fecharModalAtividade();
+            renderizarTabelaApp();
+            await supabaseClient.from('atividades').upsert({ turma_id: tId, data: d, colunas: colunasAtuais, notas: db.atividades[tId][d].notas }, { onConflict: 'turma_id,data' });
+            showNotification('Coluna criada!');
+        }
+
+        async function salvarFotoStorage() {
+            let fileInput = document.getElementById('foto-file'), file = fileInput.files[0];
+            let desc = document.getElementById('foto-desc').value, tId = document.getElementById('foto-turma').value;
+            if(!file || !desc) return alert('Selecione a foto e preencha a descrição!');
+
+            let btn = document.getElementById('btn-envia-foto');
+            btn.innerText = "A enviar para o Storage..."; btn.disabled = true;
+
+            let fileName = `${Date.now()}_${Math.random().toString().slice(2,6)}.jpg`;
+            
+            let { data, error } = await supabaseClient.storage.from('fotos-estagio').upload(fileName, file);
+            if (error) {
+                btn.innerText = "Enviar para o Storage"; btn.disabled = false;
+                return alert('Erro no upload: ' + error.message);
+            }
+
+            let { data: pubData } = supabaseClient.storage.from('fotos-estagio').getPublicUrl(fileName);
+            let publicUrl = pubData.publicUrl;
+
+            let novaFoto = {
+                id: 'foto_' + Date.now(),
+                turma_id: tId || null,
+                preceptor_id: preceptorLogado.id,
+                data: new Date().toISOString().split('T')[0],
+                imagem_url: publicUrl,
+                descricao: desc
+            };
+
+            let { error: errIns } = await supabaseClient.from('galeria').insert([novaFoto]);
+            btn.innerText = "Enviar para o Storage"; btn.disabled = false;
+
+            if (errIns) return alert('Erro ao salvar registo: ' + errIns.message);
+
+            document.getElementById('foto-desc').value = '';
+            fileInput.value = '';
+            showNotification('Foto enviada com sucesso!');
+        }
+    </script>
+</body>
+</html>
