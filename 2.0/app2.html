@@ -7,6 +7,24 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Configurações para PWA (Instalável) -->
+    <link rel="manifest" href="./manifest.json?v=3">
+    <meta name="theme-color" content="#581c87">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="./logo.png">
+
+    <script>
+      // Regista o Service Worker para permitir a instalação
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js')
+            .then((reg) => console.log('[Service Worker] Registado com sucesso!', reg))
+            .catch((err) => console.log('[Service Worker] Erro ao registar:', err));
+        });
+      }
+    </script>
 </head>
 <body class="bg-gray-100 font-sans">
 
