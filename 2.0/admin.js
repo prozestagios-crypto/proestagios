@@ -7,7 +7,22 @@ let calDataAtual = new Date(), modoVisCalendario = 'mes';
 window.onload = async () => {
     let { data: { session } } = await supabaseClient.auth.getSession();
     if (session) {
-        await iniciarAppAdmin();
+        let email = session.user.email;
+        
+        // BARREIRA DE SEGURANÇA: Verifica se o e-mail pertence a um preceptor
+        let { data: precData } = await supabaseClient.from('preceptores').select('*').eq('login', email).single();
+        
+        if (precData) {
+            // É um preceptor a tentar entrar no painel de Gestão -> Expulsar
+            await supabaseClient.auth.signOut();
+            mostrarLogin();
+            if (typeof showNotification === 'function') {
+                showNotification('Acesso Negado: Área restrita à coordenação.', true);
+            }
+        } else {
+            // Não é preceptor, logo é Gestor. Pode entrar.
+            await iniciarAppAdmin();
+        }
     } else {
         mostrarLogin();
     }
@@ -30,11 +45,27 @@ async function fazerLoginAdmin() {
     let { error } = await supabaseClient.auth.signInWithPassword({ email: email, password: p });
     
     if (error) {
-        showNotification('Credenciais inválidas!', true);
+        if (typeof showNotification === 'function') showNotification('Credenciais inválidas!', true);
         btn.disabled = false; btn.innerText = "Entrar no Painel";
-    } else {
-        await iniciarAppAdmin();
+        return; // Pára a execução aqui se houver erro
     }
+
+    // BARREIRA DE SEGURANÇA IMEDIATA APÓS LOGIN
+    let { data: precData } = await supabaseClient.from('preceptores').select('*').eq('login', email).single();
+    
+    if (precData) {
+        // Se encontrar o e-mail na tabela preceptores, cancela o acesso imediatamente
+        await supabaseClient.auth.signOut();
+        if (typeof showNotification === 'function') {
+            showNotification('Acesso Negado: Preceptores devem aceder apenas pelo App do Preceptor.', true);
+        }
+        btn.disabled = false; btn.innerText = "Entrar no Painel";
+        return;
+    }
+
+    // Login autorizado (É Gestor)
+    await iniciarAppAdmin();
+    btn.disabled = false; btn.innerText = "Entrar no Painel";
 }
 
 async function logoutAdmin() {
